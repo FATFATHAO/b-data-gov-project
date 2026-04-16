@@ -1,0 +1,13 @@
+[project]
+name = "b-data-gov-project"
+version = "0.1.0"
+description = "B-DataGov Lite — B站数据治理与可视化平台"
+requires-python = ">=3.10"
+dependencies = [
+    "fastapi>=0.115.0",
+    "uvicorn>=0.30.0",
+    "duckdb>=1.5.0",
+    "polars>=1.0.0",
+    "pydantic>=2.0.0",
+    "bilibili-api-python>=17.0.0",
+]
