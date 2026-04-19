@@ -9,6 +9,7 @@ import type {
   CrawlHealth,
   TaskListResponse,
   TaskCreateRequest,
+  TaskItem,
 } from './types';
 
 // ============ Catalog ============
@@ -44,3 +45,6 @@ export const createTask = (
 
 export const fetchTasks = (): Promise<TaskListResponse> =>
   request.get<TaskListResponse>('/api/tasks') as unknown as Promise<TaskListResponse>;
+
+// re-export types
+export type { TaskCreateRequest, TaskItem };

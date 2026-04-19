@@ -1,0 +1,128 @@
+@import "tailwindcss";
+
+@theme {
+  /* Primary - Cyber Purple */
+  --color-primary: #8b5cf6;
+  --color-primary-foreground: #ffffff;
+
+  /* Secondary */
+  --color-secondary: #252540;
+  --color-secondary-foreground: #ffffff;
+
+  /* Muted */
+  --color-muted: #252540;
+  --color-muted-foreground: #b8b8d1;
+
+  /* Accent */
+  --color-accent: #3a3a5c;
+  --color-accent-foreground: #ffffff;
+
+  /* Destructive */
+  --color-destructive: #ef4444;
+  --color-destructive-foreground: #ffffff;
+
+  /* Border & Input */
+  --color-border: #3a3a5c;
+  --color-input: #3a3a5c;
+  --color-ring: #8b5cf6;
+
+  /* Background & Foreground - Dark Theme */
+  --color-background: #0f0f1a;
+  --color-foreground: #ffffff;
+
+  /* Surface */
+  --color-surface: #1a1a2e;
+  --color-surface-foreground: #ffffff;
+
+  /* Card */
+  --color-card: #1a1a2e;
+  --color-card-foreground: #ffffff;
+
+  /* Radius */
+  --radius-sm: 0.375rem;
+  --radius-md: 0.5rem;
+  --radius-lg: 0.75rem;
+
+  /* dify 风格变量 - dark 模式 */
+  --color-background-default-subtle: #222225;
+  --color-divider-burn: #3a3a40;
+  --color-text-tertiary: #c8cadb;
+  --color-text-secondary: #d9d9de;
+  --color-state-base-hover: rgba(200, 206, 218, 0.08);
+}
+
+/* 确保 CSS 变量在全局可用 */
+:root {
+  --color-background-default-subtle: #222225;
+  --color-divider-burn: #3a3a40;
+  --color-text-tertiary: #c8cadb;
+  --color-text-secondary: #d9d9de;
+  --color-state-base-hover: rgba(200, 206, 218, 0.08);
+}
+
+/* Cyber Dark Theme */
+[data-theme="cyber"] {
+  --color-primary: #8b5cf6;
+  --color-primary-foreground: #ffffff;
+  --color-secondary: #252540;
+  --color-secondary-foreground: #ffffff;
+  --color-muted: #252540;
+  --color-muted-foreground: #b8b8d1;
+  --color-accent: #3a3a5c;
+  --color-accent-foreground: #ffffff;
+  --color-destructive: #ef4444;
+  --color-destructive-foreground: #ffffff;
+  --color-border: #3a3a5c;
+  --color-input: #3a3a5c;
+  --color-ring: #8b5cf6;
+  --color-background: #0f0f1a;
+  --color-foreground: #ffffff;
+  --color-surface: #1a1a2e;
+  --color-surface-foreground: #ffffff;
+  --color-card: #1a1a2e;
+  --color-card-foreground: #ffffff;
+}
+
+/* Base styles */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  width: 100%;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--color-background);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--color-border);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-muted-foreground);
+}
+
+/* Text selection */
+::selection {
+  background: var(--color-primary);
+  color: white;
+}
+
+/* Form input autofill */
+input:-webkit-autofill {
+  -webkit-box-shadow: 0 0 0 1000px var(--color-surface) inset !important;
+}

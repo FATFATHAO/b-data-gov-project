@@ -9,9 +9,9 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from backend.database import init_etl_tables
+from backend.database import init_etl_tables, init_auth_tables
 from backend.mock_data import init_database
-from backend.routers import catalog, quality, lineage, roi, tasks
+from backend.routers import catalog, quality, lineage, roi, tasks, auth
 
 
 @asynccontextmanager
@@ -20,6 +20,8 @@ async def lifespan(app: FastAPI):
     init_database()
     # ETL 相关表（B站真实评论爬取）
     init_etl_tables()
+    # 用户认证表
+    init_auth_tables()
     yield
 
 
@@ -43,6 +45,7 @@ app.include_router(quality.router)
 app.include_router(lineage.router)
 app.include_router(roi.router)
 app.include_router(tasks.router)
+app.include_router(auth.router)
 
 
 @app.get("/")

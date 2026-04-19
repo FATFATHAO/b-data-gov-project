@@ -89,7 +89,6 @@ const Quality = () => {
   // ECharts 颜色（使用主题色）
   const chartErrorColor = token.colorError;
   const chartSuccessColor = token.colorSuccess;
-  const chartWarningColor = token.colorWarning;
 
   // 饼图配置
   const pieOption = {

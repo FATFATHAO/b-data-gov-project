@@ -1,14 +1,50 @@
 from pathlib import Path
 import duckdb
+import psycopg2
+from psycopg2.extras import RealDictCursor
 
+# DuckDB 配置
 DB_PATH = Path(__file__).parent / "data" / "b_data_gov.duckdb"
 DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+
+# PostgreSQL 配置
+PG_CONFIG = {
+    "host": "127.0.0.1",
+    "port": 45432,
+    "database": "course",
+    "user": "postgres",
+    "password": "difyai123456",
+}
 
 
 def get_connection() -> duckdb.DuckDBPyConnection:
     # 每次请求创建新连接，避免多线程状态污染
     # DuckDB 打开/关闭开销极低，无连接池必要
     return duckdb.connect(str(DB_PATH))
+
+
+def get_pg_connection():
+    """获取 PostgreSQL 连接"""
+    return psycopg2.connect(**PG_CONFIG, cursor_factory=RealDictCursor)
+
+
+def init_auth_tables() -> None:
+    """初始化用户认证表"""
+    conn = get_pg_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS users (
+                    id              SERIAL PRIMARY KEY,
+                    username        VARCHAR(50) UNIQUE NOT NULL,
+                    nickname        VARCHAR(100) NOT NULL,
+                    password_hash   VARCHAR(255) NOT NULL,
+                    created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+        conn.commit()
+    finally:
+        conn.close()
 
 
 def init_etl_tables() -> None:

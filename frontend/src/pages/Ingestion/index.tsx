@@ -253,16 +253,7 @@ const Ingestion = () => {
             label="采集模式"
             rules={[{ required: true, message: '请选择采集模式' }]}
           >
-            <Select style={{ width: 160 }}>
-              {TARGET_TYPE_OPTIONS.map((opt) => (
-                <Option key={opt.value} value={opt.value}>
-                  <Space>
-                    {opt.icon}
-                    {opt.label}
-                  </Space>
-                </Option>
-              ))}
-            </Select>
+            <Select style={{ width: 160 }} options={TARGET_TYPE_OPTIONS.map((opt) => ({ value: opt.value, label: opt.label }))} />
           </Form.Item>
 
           <Form.Item

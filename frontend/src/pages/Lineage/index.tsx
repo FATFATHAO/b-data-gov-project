@@ -44,6 +44,13 @@ interface CustomNodeData {
   [key: string]: unknown;
 }
 
+// 节点样式（使用固定深色主题色）
+const layerNodeStyles: Record<string, { bg: string; border: string; color: string }> = {
+  ODS: { bg: '#1a1a2e', border: '#3a3a5c', color: '#ffffff' },
+  DWD: { bg: '#1e3a5f', border: '#1890ff', color: '#1890ff' },
+  DWS: { bg: '#1a3a1a', border: '#52c41a', color: '#52c41a' },
+};
+
 const CustomNode = ({ data }: { data: CustomNodeData }) => {
   const style = layerNodeStyles[data.layer] ?? layerNodeStyles.ODS;
   return (
@@ -79,13 +86,6 @@ const Lineage = () => {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [nodes, setNodes, onNodesChange] = useNodesState([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
-
-  // 节点样式（使用主题色）
-  const layerNodeStyles: Record<string, { bg: string; border: string; color: string }> = {
-    ODS: { bg: token.colorBgSpotlight, border: token.colorBorder, color: token.colorText },
-    DWD: { bg: `${token.colorInfo}15`, border: token.colorInfo, color: token.colorInfo },
-    DWS: { bg: `${token.colorSuccess}15`, border: token.colorSuccess, color: token.colorSuccess },
-  };
 
   useEffect(() => {
     fetchLineageGraph()

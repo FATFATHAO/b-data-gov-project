@@ -1,199 +1,166 @@
-import { useState } from "react";
-import { Layout, Menu, Button, Space, Tooltip, theme } from "antd";
-import { useNavigate, useLocation } from "react-router-dom";
+import React from "react";
+import { Layout, Menu, Dropdown, Avatar, Space, message } from "antd";
+import { Outlet, useNavigate, useLocation } from "react-router-dom";
 import {
-  DatabaseOutlined,
   DashboardOutlined,
-  ShareAltOutlined,
-  RiseOutlined,
-  CloudUploadOutlined,
-  MenuFoldOutlined,
-  MenuUnfoldOutlined,
-  BgColorsOutlined,
+  VideoCameraOutlined,
+  CloudServerOutlined,
+  UserOutlined,
+  LogoutOutlined,
+  DownOutlined,
+  SafetyCertificateOutlined,
+  DatabaseOutlined,
+  UploadOutlined,
+  SafetyOutlined,
+  BranchesOutlined,
+  BarChartOutlined,
+  CustomerServiceOutlined,
 } from "@ant-design/icons";
-import { useTheme } from "../contexts/ThemeContext";
-import { themeConfig, type ThemeName } from "../theme";
+import type { MenuProps } from "antd";
+import { useAuth } from "@/contexts/AuthContext";
 
-const { Sider, Header, Content } = Layout;
+const { Header, Content } = Layout;
 
-interface MainLayoutProps {
-  children: React.ReactNode;
-}
-
-// 清爽风侧边栏背景（深蓝色）
-const CLEAN_SIDER_BG = "#001529";
-// 科技风侧边栏背景
-const CYBER_SIDER_BG = "#0f0f1a";
-
-const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
-  const [collapsed, setCollapsed] = useState(false);
+const MainLayout: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
-  const { themeName, switchTheme } = useTheme();
-  const {
-    token: { colorBgContainer, colorBgLayout, colorText, colorBorder, colorPrimary },
-  } = theme.useToken();
+  const { user, logout } = useAuth();
 
-  // 侧边栏背景色
-  const siderBg = themeName === "clean" ? CLEAN_SIDER_BG : CYBER_SIDER_BG;
-  // 侧边栏文字颜色（深色背景用白色，浅色背景用深色）
-  const siderTextColor = themeName === "clean" ? "#ffffff" : colorText;
+  // --- 退出登录逻辑 ---
+  const handleLogout = () => {
+    logout();
+    message.success("已退出登录");
+    navigate("/login", { replace: true });
+  };
 
-  const menuItems = [
+  // --- 下拉菜单配置 ---
+  const userMenuItems: MenuProps["items"] = [
     {
-      key: "/catalog",
-      icon: <DatabaseOutlined />,
-      label: "数据资产目录",
+      key: "profile",
+      label: (
+        <div style={{ padding: "4px 0" }}>
+          <div style={{ fontWeight: "bold" }}>{user?.nickname || "用户"}</div>
+          <div style={{ fontSize: "12px", color: "#888" }}>@{user?.username}</div>
+        </div>
+      ),
+      disabled: true,
     },
     {
-      key: "/quality",
-      icon: <DashboardOutlined />,
-      label: "质量监控大屏",
+      type: "divider",
     },
     {
-      key: "/lineage",
-      icon: <ShareAltOutlined />,
-      label: "数据血缘追踪",
-    },
-    {
-      key: "/roi",
-      icon: <RiseOutlined />,
-      label: "治理成效分析",
-    },
-    {
-      key: "/ingestion",
-      icon: <CloudUploadOutlined />,
-      label: "数据采集中心",
+      key: "logout",
+      icon: <LogoutOutlined />,
+      label: "退出登录",
+      onClick: handleLogout,
+      danger: true,
     },
   ];
 
-  const handleThemeSwitch = () => {
-    const nextTheme: ThemeName = themeName === "clean" ? "cyber" : "clean";
-    switchTheme(nextTheme);
-  };
+  // 主导航菜单项
+  const items = [
+    { key: "/", icon: <DashboardOutlined />, label: "全网态势总览" },
+    { key: "/governance/catalog", icon: <DatabaseOutlined />, label: "资产目录" },
+    { key: "/governance/ingestion", icon: <UploadOutlined />, label: "数据采集" },
+    { key: "/governance/quality", icon: <SafetyOutlined />, label: "质量监控" },
+    { key: "/governance/lineage", icon: <BranchesOutlined />, label: "数据血缘" },
+    { key: "/governance/roi", icon: <BarChartOutlined />, label: "治理成效" },
+    { key: "/bilibili", icon: <CustomerServiceOutlined />, label: "B站监控" },
+    { key: "/douyu", icon: <VideoCameraOutlined />, label: "斗鱼监控" },
+  ];
+
+  // 动态插入管理员菜单
+  if (user?.role === "admin") {
+    items.push({
+      key: "/admin",
+      icon: <SafetyCertificateOutlined />,
+      label: "管理后台",
+    });
+  }
 
   return (
-    <Layout style={{ minHeight: "100vh" }}>
-      <Sider
-        collapsible
-        collapsed={collapsed}
-        onCollapse={setCollapsed}
-        trigger={null}
-        width={220}
+    <Layout style={{ minHeight: "100vh", background: "#000" }}>
+      {/* --- 顶部全局导航 --- */}
+      <Header
         style={{
-          background: siderBg,
-          borderRight: `1px solid ${colorBorder}`,
+          position: "sticky",
+          top: 0,
+          zIndex: 999,
+          width: "100%",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          background: "#001529",
+          borderBottom: "2px solid #1890ff",
+          padding: "0 24px",
+          boxShadow: "0 2px 8px rgba(0,0,0,0.5)",
         }}
       >
-        <div
-          style={{
-            height: 64,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: collapsed ? "center" : "flex-start",
-            padding: collapsed ? 0 : "0 20px",
-            color: siderTextColor,
-            fontSize: 16,
-            fontWeight: 600,
-            letterSpacing: 1,
-            gap: 8,
-          }}
-        >
-          {collapsed ? (
-            <span
+        {/* 左侧：Logo + 菜单 */}
+        <div style={{ display: "flex", alignItems: "center", flex: 1 }}>
+          {/* Logo */}
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              marginRight: 40,
+              color: "#fff",
+              fontSize: "20px",
+              fontWeight: "bold",
+              letterSpacing: "1px",
+              cursor: "pointer",
+            }}
+            onClick={() => navigate("/")}
+          >
+            <CloudServerOutlined style={{ fontSize: "28px", color: "#1890ff", marginRight: 10 }} />
+            HRBUST <span style={{ color: "#1890ff", marginLeft: 6 }}>MONITOR</span>
+          </div>
+
+          {/* 横向菜单 */}
+          <Menu
+            theme="dark"
+            mode="horizontal"
+            selectedKeys={[location.pathname]}
+            items={items}
+            onClick={(e) => navigate(e.key)}
+            style={{
+              flex: 1,
+              minWidth: 0,
+              background: "transparent",
+              fontSize: "16px",
+              borderBottom: "none",
+            }}
+          />
+        </div>
+
+        {/* 右侧：用户信息 */}
+        <Space size="large">
+          {/* 用户下拉头像 */}
+          <Dropdown menu={{ items: userMenuItems }} placement="bottomRight" arrow>
+            <div
               style={{
-                fontSize: 20,
-                background: `linear-gradient(135deg, ${colorPrimary} 0%, #00D4FF 100%)`,
-                WebkitBackgroundClip: "text",
-                WebkitTextFillColor: "transparent",
+                display: "flex",
+                alignItems: "center",
+                cursor: "pointer",
+                color: "#fff",
               }}
             >
-              B
-            </span>
-          ) : (
-            <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <span
-                style={{
-                  fontSize: 20,
-                  background: `linear-gradient(135deg, ${colorPrimary} 0%, #00D4FF 100%)`,
-                  WebkitBackgroundClip: "text",
-                  WebkitTextFillColor: "transparent",
-                }}
-              >
-                B
+              <Avatar style={{ backgroundColor: "#1890ff", marginRight: 8 }} icon={<UserOutlined />}>
+                {user?.nickname ? user.nickname[0].toUpperCase() : null}
+              </Avatar>
+              <span style={{ fontSize: "14px", marginRight: 4 }}>
+                {user?.nickname || "未登录"}
               </span>
-              <span>-DataGov Lite</span>
-            </span>
-          )}
-        </div>
-        <Menu
-          theme="dark"
-          mode="inline"
-          selectedKeys={[location.pathname]}
-          items={menuItems}
-          onClick={({ key }) => navigate(key)}
-          style={{
-            background: "transparent",
-          }}
-        />
-      </Sider>
-      <Layout>
-        <Header
-          style={{
-            background: colorBgContainer,
-            padding: "0 16px",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            boxShadow: `0 1px 4px rgba(0,21,41,.08)`,
-            borderBottom: `1px solid ${colorBorder}`,
-          }}
-        >
-          <Space>
-            <Button
-              type="text"
-              icon={collapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
-              onClick={() => setCollapsed(!collapsed)}
-              style={{ fontSize: 16, width: 40, height: 40, color: colorText }}
-            />
-            <span style={{ fontSize: 16, fontWeight: 500, color: colorText }}>
-              B站数据治理与可视化平台
-            </span>
-          </Space>
+              <DownOutlined style={{ fontSize: "12px", color: "rgba(255,255,255,0.5)" }} />
+            </div>
+          </Dropdown>
+        </Space>
+      </Header>
 
-          <Space>
-            <Tooltip
-              color={siderTextColor}
-              title={themeName === "clean" ? "切换到黑色科技风" : "切换到清爽管理风"}
-            >
-              <Button
-                type="text"
-                onClick={handleThemeSwitch}
-                style={{
-                  height: 40,
-                  padding: "0 12px",
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 6,
-                  color: colorText,
-                }}
-              >
-                <BgColorsOutlined style={{ fontSize: 16, color: colorPrimary }} />
-                <span style={{ fontSize: 12 }}>{themeConfig[themeName].label}</span>
-              </Button>
-            </Tooltip>
-          </Space>
-        </Header>
-        <Content
-          style={{
-            padding: 24,
-            background: colorBgLayout,
-            minHeight: 280,
-          }}
-        >
-          {children}
-        </Content>
-      </Layout>
+      {/* --- 内容区域 --- */}
+      <Content>
+        <Outlet />
+      </Content>
     </Layout>
   );
 };

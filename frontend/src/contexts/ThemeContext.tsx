@@ -1,45 +1,43 @@
-/**
- * 主题上下文 - 管理全局主题状态
- */
+import { createContext, useContext, useEffect, useState } from "react";
 
-import { createContext, useContext, useState, useCallback, type ReactNode } from 'react';
-import { ConfigProvider, type ThemeConfig } from 'antd';
-import { themeConfig, type ThemeName } from '../theme';
+type Theme = "clean" | "cyber";
 
-interface ThemeContextValue {
-  themeName: ThemeName;
-  theme: ThemeConfig;
-  switchTheme: (name: ThemeName) => void;
+interface ThemeContextType {
+  theme: Theme;
+  setTheme: (theme: Theme) => void;
+  toggleTheme: () => void;
 }
 
-const ThemeContext = createContext<ThemeContextValue | null>(null);
+const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
 
-export const ThemeProvider = ({ children }: { children: ReactNode }) => {
-  const [themeName, setThemeName] = useState<ThemeName>('clean');
+export function ThemeProvider({ children }: { children: React.ReactNode }) {
+  const [theme, setTheme] = useState<Theme>(() => {
+    if (typeof window !== "undefined") {
+      return (localStorage.getItem("theme") as Theme) || "clean";
+    }
+    return "clean";
+  });
 
-  const switchTheme = useCallback((name: ThemeName) => {
-    setThemeName(name);
-  }, []);
+  useEffect(() => {
+    localStorage.setItem("theme", theme);
+    document.documentElement.setAttribute("data-theme", theme);
+  }, [theme]);
 
-  const value: ThemeContextValue = {
-    themeName,
-    theme: themeConfig[themeName].theme,
-    switchTheme,
+  const toggleTheme = () => {
+    setTheme((prev) => (prev === "clean" ? "cyber" : "clean"));
   };
 
   return (
-    <ThemeContext.Provider value={value}>
-      <ConfigProvider theme={value.theme}>
-        {children}
-      </ConfigProvider>
+    <ThemeContext.Provider value={{ theme, setTheme, toggleTheme }}>
+      {children}
     </ThemeContext.Provider>
   );
-};
+}
 
-export const useTheme = (): ThemeContextValue => {
+export function useTheme() {
   const context = useContext(ThemeContext);
-  if (!context) {
-    throw new Error('useTheme must be used within ThemeProvider');
+  if (context === undefined) {
+    throw new Error("useTheme must be used within a ThemeProvider");
   }
   return context;
-};
+}
