@@ -14,4 +14,10 @@ dependencies = [
     "python-jose>=3.3.0",
     "passlib>=1.7.4",
     "bcrypt>=4.0.0,<5.0.0",
+    # Spark Dependencies
+    "pyspark>=3.5.0",
+    "redis>=5.0.0",
+    "jieba>=0.42.1",
+    "snownlp>=0.12.2",
+    "pyarrow",
 ]

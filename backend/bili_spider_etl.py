@@ -35,6 +35,7 @@ from backend.database import get_connection, init_etl_tables
 # Bilibili API 异步封装（bilibili-api-python）
 # ============================================================
 from bilibili_api import Credential, user, video as bili_video, comment
+from bilibili_api.comment import get_comments, CommentResourceType, OrderType
 
 # ============================================================
 # 配置
@@ -70,8 +71,17 @@ def _build_credential() -> Credential:
             "未找到 BILI_SESSDATA 环境变量。"
             "请先设置：export BILI_SESSDATA='your_sessdata_here'"
         )
+
+    # v17.4.1 WBI 接口需要 buvid3 配合签名，尝试从环境获取
+    buvid3 = os.environ.get("BILI_BUVID3", "").strip()
+
     logger.info("SESSDATA 已加载（长度=%d）", len(sessdata))
-    return Credential(sessdata=sessdata)
+    if buvid3:
+        logger.info("BUVID3 已加载")
+        return Credential(sessdata=sessdata, buvid3=buvid3)
+    else:
+        logger.info("BUVID3 未提供，将自动生成（可能触发风控）")
+        return Credential(sessdata=sessdata)
 
 
 # ============================================================
@@ -91,17 +101,36 @@ async def fetch_user_videos(
     u = user.User(uid=uid, credential=credential)
 
     try:
-        # get_videos 返回 AsyncGenerator，逐页获取
-        page_count = (count - 1) // 30 + 1  # 每页约30个
+        # v17.4.1: get_top_videos() 返回单个视频 dict，不是 AsyncGenerator
+        # 需要循环调用 get_media_list() 获取视频列表
         all_videos = []
-        async for video_card in u.get_videos(pn=1, num=30):
-            all_videos.append(video_card)
-            if len(all_videos) >= count:
+        offset = None
+
+        while len(all_videos) < count:
+            result = await u.get_media_list(ps=min(20, count - len(all_videos)), oid=offset)
+            media_list = result.get("media_list", [])
+            if not media_list:
                 break
 
-        result = all_videos[:count]
-        logger.info("获取到 %d 个视频", len(result))
-        return result
+            for item in media_list:
+                if len(all_videos) >= count:
+                    break
+                # get_media_list 返回的字段使用 bv_id 和 link
+                all_videos.append({
+                    "bvid": item.get("bv_id") or item.get("short_link", "").replace("https://b23.tv/", ""),
+                    "aid": item.get("id"),  # 可能是 media_id，需要转换
+                    "title": item.get("title", ""),
+                    "pic": item.get("cover", ""),
+                    "pubdate": item.get("pubtime", 0),
+                    "duration": item.get("duration", 0),
+                })
+                offset = item.get("id")
+
+            if not result.get("has_more", False):
+                break
+
+        logger.info("获取到 %d 个视频", len(all_videos))
+        return all_videos[:count]
 
     except Exception as e:
         logger.error("获取视频列表失败: %s", e)
@@ -118,32 +147,47 @@ async def fetch_video_comments(
     返回 dict 列表，每项包含 rpid, oid, msg, like 等。
     """
     try:
+        # v17.4.1: 需要先获取 AID 才能查询评论
+        # 使用 video.Video 获取视频信息
         v = bili_video.Video(bvid=bvid, credential=credential)
-        comments = []
+        video_info = await v.get_info()
+        aid = video_info.get("aid")
+        if not aid:
+            logger.warning("视频 %s 无法获取 aid", bvid)
+            return []
 
-        # 评论有多种类型：热评、最新评论
-        for comment_type in [comment.CommentType.HOT, comment.CommentType.NORMAL]:
-            viewer = comment.CommentViewer(
-                oid=bvid,
-                type=comment_type,
-                credential=credential,
-            )
-            async for c in viewer.get_list():
-                comments.append({
-                    "rpid": c.get("rpid", c.get("rpid_str", "")),
-                    "bvid": bvid,
-                    "msg": c.get("content", {}).get("message", ""),
-                    "like": c.get("like", 0),
-                    "ctime": c.get("ctime", 0),          # Unix 时间戳（秒）
-                    "uname": c.get("member", {}).get("uname", ""),
-                    "mid": c.get("member", {}).get("mid", ""),
-                })
-                if len(comments) >= limit:
+        all_comments = []
+
+        # v17.4.1: 使用 comment.get_comments() 函数
+        # mode=2 热评, mode=0 最新评论
+        for mode in [OrderType.LIKE, OrderType.TIME]:  # 热评排, 最新
+            page = 1
+            while len(all_comments) < limit:
+                resp = await get_comments(
+                    oid=aid,
+                    type_=CommentResourceType.VIDEO,
+                    page_index=page,
+                    order=mode,
+                    credential=credential
+                )
+                replies = resp.get("replies", []) or []
+                if not replies:
                     break
-            if len(comments) >= limit:
-                break
+                for c in replies:
+                    all_comments.append({
+                        "rpid": c.get("rpid", c.get("rpid_str", "")),
+                        "bvid": bvid,
+                        "msg": c.get("content", {}).get("message", ""),
+                        "like": c.get("like", 0),
+                        "ctime": c.get("ctime", 0),          # Unix 时间戳（秒）
+                        "uname": c.get("member", {}).get("uname", ""),
+                        "mid": c.get("member", {}).get("mid", ""),
+                    })
+                page += 1
+                if len(all_comments) >= limit:
+                    break
 
-        return comments[:limit]
+        return all_comments[:limit]
 
     except Exception as e:
         logger.warning("抓取视频 %s 评论失败: %s", bvid, e)
@@ -306,76 +350,93 @@ def load_to_duckdb(
     """将 DataFrame 写入 DuckDB ODS/DWD 表，并写入 ETL 日志"""
 
     conn = get_connection()
-    conn.execute("PRAGMA eager_warnings = 'ignore'")
+    try:
+        conn.execute("PRAGMA warnings_as_errors = false")
+    except Exception:
+        pass  # Older DuckDB versions don't have this pragma
 
     # ODS：INSERT OR REPLACE（主键去重，幂等）
     if not df_raw.is_empty():
-        df_raw_pd = df_raw.with_columns(pl.lit(run_id).alias("etl_run_id")).to_pandas()
-        conn.execute("""
-            INSERT OR REPLACE INTO ods_raw_comments
-            (id, video_bvid, video_title, up_uid, up_name,
-             content, like_count, post_time, post_time_str, etl_run_id)
-            SELECT
-                CAST(t.id AS VARCHAR),
-                CAST(t.video_bvid AS VARCHAR),
-                CAST(t.video_title AS VARCHAR),
-                CAST(t.up_uid AS BIGINT),
-                CAST(t.up_name AS VARCHAR),
-                CAST(t.content AS VARCHAR),
-                CAST(t.like_count AS BIGINT),
-                CAST(t.post_time AS BIGINT),
-                CAST(t.post_time_str AS VARCHAR),
-                CAST(t.etl_run_id AS VARCHAR)
-            FROM df_raw_pd AS t
-        """)
+        # 使用 iter_rows 避免 pyarrow/numpy 依赖
+        df_with_run = df_raw.with_columns(pl.lit(run_id).alias("etl_run_id"))
+        for row in df_with_run.iter_rows(named=True):
+            conn.execute("""
+                INSERT INTO ods_raw_comments
+                (id, video_bvid, video_title, up_uid, up_name,
+                 content, like_count, post_time, post_time_str, etl_run_id)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(id) DO UPDATE SET
+                    video_bvid = excluded.video_bvid,
+                    video_title = excluded.video_title,
+                    up_uid = excluded.up_uid,
+                    up_name = excluded.up_name,
+                    content = excluded.content,
+                    like_count = excluded.like_count,
+                    post_time = excluded.post_time,
+                    post_time_str = excluded.post_time_str,
+                    etl_run_id = excluded.etl_run_id
+            """, [
+                str(row["id"]),
+                str(row["video_bvid"]),
+                str(row["video_title"]),
+                int(row["up_uid"]),
+                str(row["up_name"]),
+                str(row["content"]),
+                int(row["like_count"]),
+                int(row["post_time"]),
+                str(row["post_time_str"]),
+                str(row["etl_run_id"]),
+            ])
 
     # DWD：先清空该 run_id 的旧数据，再插入（确保幂等）
     if not df_clean.is_empty():
         # 删除旧记录
         conn.execute("DELETE FROM dwd_clean_comments WHERE etl_run_id = ?", [run_id])
 
-        df_clean_pd = df_clean.to_pandas()
-        conn.execute("""
-            INSERT INTO dwd_clean_comments
-            (id, video_bvid, video_title, up_uid, up_name,
-             content, like_count, post_time, etl_run_id)
-            SELECT
-                CAST(t.id AS VARCHAR),
-                CAST(t.video_bvid AS VARCHAR),
-                CAST(t.video_title AS VARCHAR),
-                CAST(t.up_uid AS BIGINT),
-                CAST(t.up_name AS VARCHAR),
-                CAST(t.content AS VARCHAR),
-                CAST(t.like_count AS BIGINT),
-                CAST(t.post_time_norm AS TIMESTAMP),
-                CAST(t.etl_run_id AS VARCHAR)
-            FROM df_clean_pd AS t
-        """)
+        # 使用 iter_rows 避免 pyarrow/numpy 依赖
+        for row in df_clean.iter_rows(named=True):
+            conn.execute("""
+                INSERT INTO dwd_clean_comments
+                (id, video_bvid, video_title, up_uid, up_name,
+                 content, like_count, post_time, etl_run_id)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, [
+                str(row["id"]),
+                str(row["video_bvid"]),
+                str(row["video_title"]),
+                int(row["up_uid"]),
+                str(row["up_name"]),
+                str(row["content"]),
+                int(row["like_count"]),
+                str(row["post_time_norm"]),  # post_time_norm is the datetime column
+                str(row["etl_run_id"]),
+            ])
 
     # DWS 汇总：按视频聚合
     if not df_clean.is_empty():
         conn.execute("DELETE FROM dws_comment_stats WHERE etl_run_id = ?", [run_id])
-        dws_pd = df_clean.group_by("video_bvid", "video_title", "up_uid", "up_name", "etl_run_id").agg([
+        # 使用 Polars 的 group_by 然后逐行插入
+        dws_agg = df_clean.group_by("video_bvid", "video_title", "up_uid", "up_name", "etl_run_id").agg([
             pl.col("id").count().alias("total_comments"),
             pl.col("like_count").sum().alias("total_likes"),
             pl.col("like_count").mean().alias("avg_likes"),
-        ]).to_pandas()
-        if not dws_pd.empty:
+        ])
+        for row in dws_agg.iter_rows(named=True):
             conn.execute("""
                 INSERT INTO dws_comment_stats
                 (video_bvid, video_title, up_uid, up_name,
                  total_comments, total_likes, avg_likes, etl_run_id)
-                SELECT
-                    CAST(t.video_bvid AS VARCHAR),
-                    CAST(t.video_title AS VARCHAR),
-                    CAST(t.up_uid AS BIGINT),
-                    CAST(t.up_name AS VARCHAR),
-                    CAST(t.total_comments AS BIGINT),
-                    CAST(t.total_likes AS BIGINT),
-                    CAST(t.avg_likes AS DOUBLE),
-                    CAST(t.etl_run_id AS VARCHAR)
-                FROM dws_pd AS t
-            """)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """, [
+                str(row["video_bvid"]),
+                str(row["video_title"]),
+                int(row["up_uid"]),
+                str(row["up_name"]),
+                int(row["total_comments"]),
+                int(row["total_likes"]),
+                float(row["avg_likes"]),
+                str(row["etl_run_id"]),
+            ])
 
     # sys_etl_logs：追加日志
     success_rate = round(api_success / (api_success + api_fail), 4) if (api_success + api_fail) > 0 else 0.0

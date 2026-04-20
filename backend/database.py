@@ -52,9 +52,10 @@ def init_etl_tables() -> None:
     conn = get_connection()
 
     # ODS 原始评论层
+    conn.execute("DROP TABLE IF EXISTS ods_raw_comments")
     conn.execute("""
-        CREATE TABLE IF NOT EXISTS ods_raw_comments (
-            id            VARCHAR,
+        CREATE TABLE ods_raw_comments (
+            id            VARCHAR PRIMARY KEY,
             video_bvid    VARCHAR,
             video_title   VARCHAR,
             up_uid        BIGINT,
