@@ -4,6 +4,11 @@
 
 ```
 backend/
+├── collectors/             # 弹幕采集器模块
+│   ├── __init__.py
+│   ├── config.py           # Kafka 配置、B站凭证
+│   ├── bili_live_collector.py  # B站直播弹幕采集器
+│   └── bili_video_collector.py # B站视频弹幕采集器
 ├── spark/                   # Spark Structured Streaming 模块
 │   ├── spark_session.py     # SparkSession 初始化
 │   ├── jobs/               # Spark Jobs
@@ -130,8 +135,11 @@ python -m spark.sinks.redis_sink --kafka localhost:9092
 ### 使用启动脚本
 
 ```bash
-./start_spark_jobs.sh all     # 启动所有 Jobs
-./start_spark_jobs.sh stop   # 停止所有 Jobs
+./start_spark_jobs.sh all        # 启动所有 Spark Jobs
+./start_spark_jobs.sh bili_live   # 启动 B站直播弹幕采集器
+./start_spark_jobs.sh bili_video  # 启动 B站视频弹幕采集器
+./start_spark_jobs.sh stop       # 停止所有 Jobs
+./start_spark_jobs.sh status     # 查看状态
 ```
 
 ## 开发规范
@@ -212,6 +220,11 @@ KAFKA_BOOTSTRAP_SERVERS=localhost:9092
 
 # B站 API
 BILI_SESSDATA=your_sessdata_here
+BILI_BILI_JCT=your_bili_jct
+BILI_BUVID3=your_buvid3
+BILI_BUVID4=your_buvid4
+BILI_ROOM_ID=732
+BILI_BV_ID=BVxxxxxx
 ```
 
 ## 注意事项

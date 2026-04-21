@@ -1,6 +1,6 @@
 # Flink → Spark 迁移完成文档
 
-> 更新日期: 2026-04-19
+> 更新日期: 2026-04-20
 
 ## 一、迁移概述
 
@@ -22,6 +22,11 @@ Collector → Kafka → Spark Structured Streaming → Redis
 
 ```
 backend/
+├── collectors/                       # 弹幕采集器 (新增)
+│   ├── __init__.py
+│   ├── config.py                    # Kafka 配置、B站凭证
+│   ├── bili_live_collector.py      # B站直播弹幕采集器
+│   └── bili_video_collector.py       # B站视频弹幕采集器
 ├── spark/                          # Spark 模块 (新增)
 │   ├── __init__.py
 │   ├── spark_session.py             # SparkSession 初始化
@@ -94,7 +99,61 @@ backend/
 - `sentiment:{room_id}` (LIST): 情感历史
 - `sentiment:current:{room_id}` (STRING): 当前情感分数
 
-## 四、依赖更新
+## 四、Collectors 采集器
+
+### 4.1 bili_live_collector.py (B站直播弹幕)
+
+| 配置 | 值 |
+|------|-----|
+| 输入 | B站直播间 WebSocket |
+| 输出 | Kafka topic `danmaku_raw` |
+| 技术 | bilibili-api `LiveDanmaku` + Kafka Producer |
+
+**功能:**
+- 通过 WebSocket 实时采集B站直播间弹幕
+- 自动重连机制
+- 发送至 Kafka 供 Spark 处理
+
+**Kafka 消息格式:**
+```json
+{
+  "platform": "bilibili",
+  "room_id": "bilibili_live:732",
+  "user": {"id": "user_hash", "name": "用户名"},
+  "content": "弹幕内容",
+  "event_type": "danmaku",
+  "ts": 1713000000000
+}
+```
+
+### 4.2 bili_video_collector.py (B站视频弹幕)
+
+| 配置 | 值 |
+|------|-----|
+| 输入 | B站视频弹幕 XML |
+| 输出 | Kafka topic `danmaku_raw` |
+| 回放速度 | 默认 2.0x |
+
+**功能:**
+- 获取视频弹幕 XML 并解析
+- 按视频时间戳回放弹幕到 Kafka
+- 支持倍速控制（1.0 = 原速, 2.0 = 2倍速）
+- 回放完成后发送 FLUSH 信号
+
+**Kafka 消息格式:**
+```json
+{
+  "platform": "bilibili",
+  "room_id": "bilibili_video:BVxxxx",
+  "user": {"id": "user_hash", "name": null},
+  "content": "弹幕内容",
+  "event_type": "danmaku",
+  "ts": 1713000000000,
+  "video_time": 12.5
+}
+```
+
+## 五、依赖更新
 
 ### pyproject.toml 新增依赖
 
@@ -106,19 +165,34 @@ dependencies = [
     "redis>=5.0.0",
     "jieba>=0.42.1",
     "snownlp>=0.12.2",
+    "kafka-python>=2.0.2",
+    "bilibili-api-python>=17.4.1",
 ]
 ```
 
-## 五、使用方法
+## 六、使用方法
 
-### 5.1 安装依赖
+### 6.1 安装依赖
 
 ```bash
 cd backend
 uv sync
 ```
 
-### 5.2 启动 Spark Jobs
+### 6.2 启动 Collectors 采集器
+
+```bash
+# 启动 B站直播弹幕采集 (默认房间 732)
+./start_spark_jobs.sh bili_live
+
+# 自定义房间 ID
+BILI_ROOM_ID=12345 ./start_spark_jobs.sh bili_live
+
+# 启动 B站视频弹幕采集 (需要设置 BV 号)
+BILI_BV_ID=BV1xx411c7mD ./start_spark_jobs.sh bili_video
+```
+
+### 6.3 启动 Spark Jobs
 
 ```bash
 # 启动所有 Jobs
@@ -137,7 +211,19 @@ uv sync
 ./start_spark_jobs.sh stop
 ```
 
-### 5.3 命令行参数
+### 6.4 命令行参数
+
+**Collectors 参数：**
+
+| 参数 | 说明 | 默认值 |
+|------|------|--------|
+| `--room-id` | 直播间ID (bili_live) | `732` |
+| `--bv-id` | B站视频BV号 (bili_video) | - |
+| `--speed` | 回放倍速 (bili_video) | `2.0` |
+| `--kafka` | Kafka 服务器 | `localhost:9092` |
+| `--topic` | Kafka topic | `danmaku_raw` |
+
+**Spark Jobs 参数：**
 
 | 参数 | 说明 | 默认值 |
 |------|------|--------|
@@ -146,21 +232,45 @@ uv sync
 | `--redis-host` | Redis 主机 (redis_sink) | `localhost` |
 | `--redis-port` | Redis 端口 (redis_sink) | `6379` |
 
-### 5.4 直接运行
+### 6.5 直接运行
 
 ```bash
-# 使用 python -m 运行
+# Collectors
+python -m backend.collectors.bili_live_collector --room-id 732
+python -m backend.collectors.bili_video_collector --bv-id BV1xx411c7mD --speed 2.0
+
+# Spark Jobs
 python -m spark.jobs.danmaku_count --kafka localhost:9092
 python -m spark.jobs.sentiment --kafka localhost:9092
 python -m spark.jobs.wordcloud --kafka localhost:9092
 python -m spark.sinks.redis_sink --kafka localhost:9092
 ```
 
-## 六、验证方法
+### 6.6 环境变量
+
+```bash
+# B站 API 凭证 (必需)
+export BILI_SESSDATA="your_sessdata_here"
+export BILI_BILI_JCT="your_bili_jct"      # 可选
+export BILI_BUVID3="your_buvid3"          # 可选，防 412 错误
+export BILI_BUVID4="your_buvid4"          # 可选，防 412 错误
+
+# Collector 配置
+export BILI_ROOM_ID=732                   # 默认直播间
+export BILI_BV_ID=BVxxxxxx                # 视频 BV 号
+export KAFKA_BOOTSTRAP_SERVERS=localhost:9092
+export REDIS_HOST=localhost
+export REDIS_PORT=6379
+```
+
+## 七、验证方法
 
 1. **确保 Kafka 和 Redis 已启动**
 
-2. **启动一个测试数据源 (如 video_pipeline)**
+2. **启动 B站直播 Collector**
+   ```bash
+   ./start_spark_jobs.sh bili_live
+   ```
 
 3. **检查 Kafka topic 是否有数据**
    ```bash
@@ -181,10 +291,10 @@ python -m spark.sinks.redis_sink --kafka localhost:9092
    ```bash
    redis-cli
    > ZREVRANGE current_hot_rooms 0 10 WITHSCORES
-   > GET wordcloud:bilibili_video:BVxxxx
+   > GET wordcloud:bilibili_live:732
    ```
 
-## 七、与 Flink 版本的功能对比
+## 八、与 Flink 版本的功能对比
 
 | 功能 | Flink 版本 | Spark 版本 |
 |------|-----------|-----------|
@@ -195,17 +305,21 @@ python -m spark.sinks.redis_sink --kafka localhost:9092
 | 视频/直播区分 | ✅ | ✅ |
 | Redis 存储 | ✅ | ✅ |
 | Checkpoint | ✅ | ✅ |
+| B站直播采集 | ✅ | ✅ |
+| B站视频采集 | ✅ | ✅ |
 
-## 八、注意事项
+## 九、注意事项
 
-1. **Checkpoint 目录**: 每个 Job 需要独立的 checkpoint 目录
-2. **性能调优**: `local[2]` 适合开发环境，生产环境需要集群
-3. **版本匹配**: PySpark 3.5.x 需要与 Kafka Broker 版本兼容
-4. **依赖安装**: 首次运行需要安装 PySpark、Redis、Jieba、SnowNLP
+1. **B站凭证**: `BILI_SESSDATA` 必需，`BILI_BUVID3/BUVID4` 可防 412 错误
+2. **Checkpoint 目录**: 每个 Job 需要独立的 checkpoint 目录
+3. **性能调优**: `local[2]` 适合开发环境，生产环境需要集群
+4. **版本匹配**: PySpark 3.5.x 需要与 Kafka Broker 版本兼容
+5. **依赖安装**: 首次运行需要安装 PySpark、Redis、Jieba、SnowNLP
 
-## 九、后续优化建议
+## 十、后续优化建议
 
 1. **集群部署**: 使用 `spark-submit` 提交到 Spark 集群
 2. **监控集成**: 添加 Spark UI 和 Prometheus 指标暴露
 3. **资源调优**: 调整 `spark.executor.memory`, `spark.cores.max` 等参数
 4. **容错处理**: 增强错误处理和重试机制
+5. **斗鱼采集器**: 可参考已完成的 collectors 实现斗鱼直播弹幕采集器
