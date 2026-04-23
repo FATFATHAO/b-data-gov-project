@@ -42,6 +42,10 @@ PYTHON="${BACKEND_DIR}/.venv/bin/python"
 LOG_DIR="${BACKEND_DIR}/logs/spark"
 mkdir -p "${LOG_DIR}"
 
+# PySpark Python 版本一致性（解决 worker 与 driver Python 版本冲突）
+export PYSPARK_PYTHON="${BACKEND_DIR}/.venv/bin/python"
+export PYSPARK_DRIVER_PYTHON="${BACKEND_DIR}/.venv/bin/python"
+
 KAFKA_SERVERS="${KAFKA_BOOTSTRAP_SERVERS:-localhost:9092}"
 REDIS_HOST="${REDIS_HOST:-localhost}"
 REDIS_PORT="${REDIS_PORT:-6379}"

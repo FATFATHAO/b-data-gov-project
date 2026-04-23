@@ -338,6 +338,9 @@ def run_wordcloud(spark: SparkSession, kafka_bootstrap: str) -> None:
     """
     logger.info("Starting wordcloud job")
 
+    # 处理视频流
+    video_query = process_video_stream(spark, kafka_bootstrap)
+
     # 处理直播流
     live_query = process_live_stream(spark, kafka_bootstrap)
 
@@ -347,9 +350,15 @@ def run_wordcloud(spark: SparkSession, kafka_bootstrap: str) -> None:
     def await_query(q):
         q.awaitTermination()
 
+    video_thread = Thread(target=await_query, args=(video_query,))
     live_thread = Thread(target=await_query, args=(live_query,))
+
+    video_thread.start()
     live_thread.start()
+
+    video_thread.join()
     live_thread.join()
+
 
 
 def main() -> None:

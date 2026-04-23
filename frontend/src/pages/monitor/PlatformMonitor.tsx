@@ -98,7 +98,7 @@ const PlatformMonitor: React.FC<Props> = ({ platformName, enableVideo }) => {
 
     const pf = platform.toLowerCase();
     if (pf === 'bilibili') {
-      return rawId.startsWith('BV') ? `bilibili_video:${rawId}` : `bilibili:${rawId}`;
+      return rawId.startsWith('BV') ? `bilibili_video:${rawId}` : `bilibili_live:${rawId}`;
     }
     return `${pf}:${rawId}`;
   };
@@ -148,13 +148,8 @@ const PlatformMonitor: React.FC<Props> = ({ platformName, enableVideo }) => {
         room_id: rawId,
         platform: platformName.toLowerCase()
       });
-      message.success("已发送停止信号，任务即将停止");
-      // 立即更新本地状态，不等待轮询
-      setRankList(prev =>
-        prev.map(r =>
-          r.room_id === selectedRoomId ? { ...r, status: 'STOPPED' } : r
-        )
-      );
+      message.success("已发送停止信号");
+      // 不乐观更新，等待 2 秒后的 fetchRank 轮询同步
     } catch (e) {
       console.error(e);
       message.error("停止失败");
@@ -280,73 +275,26 @@ const PlatformMonitor: React.FC<Props> = ({ platformName, enableVideo }) => {
 
   // 获取图表数据
   useEffect(() => {
-    if (!selectedRoomId) return;
+    if (!activeApiRoomId) return;
 
-    // // 从rankList中找到当前选中任务的状态
-    // const currentTask = rankList.find(r => r.room_id === selectedRoomId);
-    // console.log(currentTask);
-    // 默认状态为RUNNING,防止undefined
-    let status = "RUNNING";
-
-    if (rankList.length > 0) {
-      const currentTask = rankList.find(r => r.room_id === selectedRoomId);
-      if (currentTask) {
-        status = currentTask.status;
-        lastKnownStatusRef.current = status;
-      } else {
-        console.warn(`Room ${selectedRoomId} missing from RankList, assuming STOPPED.`);
-        status = "STOPPED";
-      }
-    } else {
-      status = lastKnownStatusRef.current;
-    }
-
-    // if (currentTask) {
-    //   // 如果还在榜单上就使用榜单的状态
-    //   status = currentTask.status;
-    //   lastKnownStatusRef.current = status;
-    // } else {
-    //   // 如果当前选中的房间已经不在榜单里，说明我们的任务结束了
-    //   // console.warn(`Room ${selectedRoomId} is missing from RankList, assuming STOPPED.`);
-    //   status = "STOPPED";
-    // }
-
-    console.log(`Room: ${selectedRoomId}, Status: ${status}`);
-
-    // const isVideo = selectedRoomId.startsWith("bilibili_video");
-
-    // 清空旧数据，让图表重新加载
-    // setChartData([]);
-    // setWordCloudData([]);
-
+    // 定时拉取
     const fetchData = async () => {
-
-      let apiRoomId = activeApiRoomId;
-      const platform = platformName.toLowerCase();
-
-      if (!selectedRoomId.includes(":")) {
-        if (platform === "bilibili") {
-          if (selectedRoomId.startsWith("BV")) {
-            apiRoomId = `bilibili_video:${selectedRoomId}`;
-          } else {
-            apiRoomId = `bilibili:${selectedRoomId}`;
-          }
-        } else {
-          apiRoomId = `${platform}:${selectedRoomId}`;
-        }
-      }
+      // 1. 查找当前状态 (用于词云逻辑)
+      const currentTask = rankList.find(r => r.room_id === activeApiRoomId);
+      const status = currentTask ? currentTask.status : lastKnownStatusRef.current || 'RUNNING';
+      if (currentTask) lastKnownStatusRef.current = status;
 
       try {
-        // 历史趋势图：无论视频还是直播，都需要实时拉取（或者视频拉一次也行，这里假设视频热度也变）
-        const historyRes = await getHistory(apiRoomId);
-        if (historyRes.data && historyRes.data) {
+        // 历史趋势图
+        const historyRes = await getHistory(activeApiRoomId);
+        if (historyRes.data) {
           setChartData(historyRes.data);
         }
 
         // 获取情感数据
         try {
-          const sentRes = await getSentiment(apiRoomId);
-          if (sentRes.data && sentRes.data) {
+          const sentRes = await getSentiment(activeApiRoomId);
+          if (sentRes.data) {
             setSentimentData(sentRes.data);
           }
         } catch (err) {
@@ -354,55 +302,44 @@ const PlatformMonitor: React.FC<Props> = ({ platformName, enableVideo }) => {
         }
 
         // 词云逻辑控制
-        // 如果是直播 -> 每次都拉取
-        // 如果是视频 -> 并且之前没有拉取过这个BV号 -> 拉取
         let shouldFetchCloud = false;
         if (status === 'RUNNING') {
           shouldFetchCloud = true;
-          // 如果之前被误标记为已拉取(比如从暂停恢复到运行),移除标记
-          if (fetchedFinishedRef.current.has(selectedRoomId)) {
-            fetchedFinishedRef.current.delete(selectedRoomId)
+          if (fetchedFinishedRef.current.has(activeApiRoomId)) {
+            fetchedFinishedRef.current.delete(activeApiRoomId);
           }
-        }
-        // 如果状态是FINISHED或STOPPED -> 只拉取一次
-        else if (status === 'FINISHED' || status === 'STOPPED') {
-          if (!fetchedFinishedRef.current.has(selectedRoomId)) {
+        } else if (status === 'FINISHED' || status === 'STOPPED') {
+          if (!fetchedFinishedRef.current.has(activeApiRoomId)) {
             shouldFetchCloud = true;
           }
         }
-        // FAILED -> 不拉取
 
         if (shouldFetchCloud) {
-          // 只有第一次拉取时显示 loading，避免轮询闪烁
           if (wordCloudData.length === 0) setLoadingCloud(true);
-
-          const cloudRes = await getWordCloud(apiRoomId);
+          const cloudRes = await getWordCloud(activeApiRoomId);
           setLoadingCloud(false);
 
           if (cloudRes.data) {
             const newData = Array.isArray(cloudRes.data) ? cloudRes.data : [];
             setWordCloudData(newData);
-
-            // 如果是非 Running 状态，标记为已拉取，下次轮询不再请求
             if (status !== 'RUNNING') {
-              fetchedFinishedRef.current.add(selectedRoomId);
+              fetchedFinishedRef.current.add(activeApiRoomId);
             }
           }
         }
       } catch (e) {
-        console.error(e);
+        console.error("fetchData error:", e);
         setLoadingCloud(false);
       }
     };
 
+    // 立即执行一次
     fetchData();
 
-    const timer = setInterval(() => {
-      fetchData();
-    }, 3000);
-
+    // 开启定时器
+    const timer = setInterval(fetchData, 3000);
     return () => clearInterval(timer);
-  }, [selectedRoomId, rankList]);
+  }, [activeApiRoomId]); // 只依赖 API ID，不受 rankList 频繁更新干扰
 
   // 状态图标映射
   const getStatusIcon = (status: string) => {

@@ -1,10 +1,11 @@
 import React from 'react';
 import ReactECharts from 'echarts-for-react';
 import { Card, Empty } from 'antd';
+import type { HistoryDataPoint } from '../../pages/api/type.d';
 
 interface Props {
   roomId: string | null;
-  data: any[];
+  data: HistoryDataPoint[];
 }
 
 const MonitorChart: React.FC<Props> = ({ roomId, data }) => {
@@ -23,10 +24,11 @@ const MonitorChart: React.FC<Props> = ({ roomId, data }) => {
       tooltip: { trigger: 'axis', axisPointer: { type: 'cross' } },
       grid: { top: '15%', left: '5%', right: '5%', bottom: '15%', containLabel: true },
       xAxis: {
-        type: 'time',
+        type: 'category',
         boundaryGap: false,
-        axisLabel: { formatter: '{HH}:{mm}:{ss}', color: '#aaa' },
-        splitLine: { show: false }
+        axisLabel: { color: '#aaa' },
+        splitLine: { show: false },
+        data: data.map(item => item.time)
       },
       yAxis: {
         type: 'value',
@@ -52,7 +54,7 @@ const MonitorChart: React.FC<Props> = ({ roomId, data }) => {
               colorStops: [{ offset: 0, color: 'rgba(24, 144, 255, 0.6)' }, { offset: 1, color: 'rgba(24, 144, 255, 0.05)' }]
             }
           },
-          data: data.map(item => [item.ts, item.value])
+          data: data.map(item => item.value)
         }
       ]
     };

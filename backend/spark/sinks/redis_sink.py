@@ -180,15 +180,22 @@ class RedisWriter:
         """批量写入 Redis"""
         with self.lock:
             if not self.batch:
+                logger.info("flush: batch is empty, skipping")
                 return
 
             import redis
+            logger.info(f"flush: batch keys={list(self.batch.keys())}, agg count={len(self.batch.get('agg', []))}")
+            agg_items = self.batch.get("agg", [])
+            if agg_items:
+                logger.info(f"flush: first agg item room_id={agg_items[0]['room_id']}, count={agg_items[0]['count']}")
             r = redis.Redis(connection_pool=self.pool)
             pipe = r.pipeline()
 
             for item in self.batch.get("agg", []):
                 room_id = item["room_id"]
                 ttl = self._get_ttl(room_id)
+                history_key = f"history:{room_id}"
+                logger.info(f"flush: RPUSH {history_key} count={item['count']}")
 
                 # 更新热门房间排行榜
                 pipe.zadd("current_hot_rooms", {room_id: item["count"]})
@@ -323,10 +330,19 @@ def run_redis_sink(
         if batch_df.isEmpty():
             return
 
+        total = batch_df.count()
+        topics_counts = {}
+        for row in batch_df.collect():
+            t = row.input_topic
+            topics_counts[t] = topics_counts.get(t, 0) + 1
+        logger.info(f"Batch {batch_id}: total={total}, topics={topics_counts}")
+
         # 从 batch_df 重新解析 agg 数据
         agg_schema = get_agg_schema()
         try:
             agg_parsed = batch_df.filter(F.col("input_topic") == "danmaku_agg")
+            agg_parsed_count = agg_parsed.count()
+            logger.info(f"Batch {batch_id}: danmaku_agg filtered count={agg_parsed_count}")
             agg_df2 = (
                 agg_parsed.select(
                     F.from_json(F.col("value_str"), agg_schema).alias("data"),
@@ -338,9 +354,14 @@ def run_redis_sink(
             for row in agg_df2.collect():
                 try:
                     row_dict = row.asDict()
-                    writer.add_agg(row_dict["room_id"], int(row_dict["count"]), row_dict.get("ts_str"))
+                    rid = row_dict["room_id"]
+                    if rid == "system_flush":
+                        continue
+                    writer.add_agg(rid, int(row_dict["count"]), row_dict.get("ts_str"))
                 except Exception as e:
-                    logger.warning(f"Failed to add agg: {e}")
+                    logger.warning(f"Failed to add agg: {e}, row={row}")
+            agg_count = agg_df2.count()
+            logger.info(f"Batch {batch_id}: parsed agg rows={agg_count}")
         except Exception as e:
             logger.warning(f"Failed to parse agg: {e}")
 

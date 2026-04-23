@@ -69,26 +69,28 @@ def _fav_key(room_id: str, platform: str, target_type: str) -> str:
 _running_collectors: dict[str, dict] = {}
 
 
-def _start_collector(room_id: str, platform: str, collector_type: str) -> None:
+def _start_collector(raw_id: str, platform: str, collector_type: str, redis_room_id: str) -> None:
     """
     启动 collector 子进程
+    raw_id: 原始 ID（如 "732" 或 "BVxxx"）
     collector_type: "live" | "video"
+    redis_room_id: 带前缀的完整 ID（如 "bilibili_live:732"）
     """
-    # 复用已有的 collector
-    if room_id in _running_collectors:
-        logger.info("Collector already running for room %s", room_id)
+    # 复用已有的 collector（key 改为 redis_room_id）
+    if redis_room_id in _running_collectors:
+        logger.info("Collector already running for %s", redis_room_id)
         return
 
     # 构建命令
     if collector_type == "live":
         cmd = [
             _VENV_PYTHON, "-m", "backend.collectors.bili_live_collector",
-            "--room-id", room_id,
+            "--room-id", raw_id,
         ]
     else:  # video
         cmd = [
             _VENV_PYTHON, "-m", "backend.collectors.bili_video_collector",
-            "--bv-id", room_id,
+            "--bv-id", raw_id,
         ]
 
     # 设置环境变量
@@ -103,31 +105,33 @@ def _start_collector(room_id: str, platform: str, collector_type: str) -> None:
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
-        _running_collectors[room_id] = {
+        _running_collectors[redis_room_id] = {
             "pid": proc.pid,
             "type": collector_type,
             "platform": platform,
         }
-        logger.info("Started collector for room %s, PID=%d", room_id, proc.pid)
+        logger.info("Started collector for %s (PID=%d)", redis_room_id, proc.pid)
     except Exception as e:
         logger.error("Failed to start collector: %s", e)
         raise
 
 
-def _stop_collector(room_id: str) -> None:
+def _stop_collector(redis_room_id: str) -> None:
     """停止 collector 子进程（强制 SIGKILL 确保 aiohttp 进程被终止）"""
     # 始终执行 force kill，不依赖 _running_collectors（进程重启后 in-memory dict 会丢失）
-    _force_kill_by_name(room_id)
+    # 从 redis_room_id 提取 raw_id 用于 pkill（如 "bilibili_live:732" → "732"）
+    raw_id = redis_room_id.split(":")[-1]
+    _force_kill_by_name(raw_id)
 
-    if room_id not in _running_collectors:
-        logger.warning("No collector found in memory for room %s", room_id)
+    if redis_room_id not in _running_collectors:
+        logger.warning("No collector found in memory for %s", redis_room_id)
         return
 
-    info = _running_collectors.pop(room_id)
+    info = _running_collectors.pop(redis_room_id)
     pid = info["pid"]
     try:
         os.kill(pid, signal.SIGKILL)
-        logger.info("Killed collector PID=%d for room %s", pid, room_id)
+        logger.info("Killed collector PID=%d for %s", pid, redis_room_id)
     except ProcessLookupError:
         logger.info("Collector PID=%d already dead", pid)
     except Exception as e:
@@ -213,11 +217,8 @@ def get_history(room_id: str):
         logger.error("Redis LIST read error for %s: %s", key, e)
         raise HTTPException(status_code=500, detail="Redis read error")
 
-    # 每次读取后清除列表（避免重复消费）
-    try:
-        r.delete(key)
-    except Exception:
-        pass
+    # 不再删除 history key（DELETE 导致轮询间隔内写入的数据丢失）
+    # 数据通过 Redis TTL 自然清理（live 3600s, video 永久）
 
     result = []
     for item in raw:
@@ -225,8 +226,17 @@ def get_history(room_id: str):
             obj = json.loads(item)
             ts = obj.get("ts")
             if ts:
-                # ts 是毫秒时间戳，转为前端需要的 "HH:mm:ss" 格式
-                time_str = time.strftime("%H:%M:%S", time.localtime(ts / 1000))
+                # ts 可以是毫秒时间戳（数字）或日期时间字符串（YYYY-MM-DD HH:mm:ss）
+                try:
+                    # 尝试作为数字时间戳处理（毫秒）
+                    ms = int(ts)
+                    time_str = time.strftime("%H:%M:%S", time.localtime(ms / 1000))
+                except (ValueError, TypeError):
+                    # 作为日期时间字符串处理，直接提取 HH:mm:ss
+                    if isinstance(ts, str) and " " in ts:
+                        time_str = ts.split(" ")[1]  # "2026-04-23 12:42:53" → "12:42:53"
+                    else:
+                        time_str = ""
             else:
                 time_str = ""
             result.append({
@@ -334,7 +344,7 @@ def start_monitor(body: dict):
         redis_room_id = f"bilibili_live:{room_id}"
 
     try:
-        _start_collector(room_id, platform, monitor_type)
+        _start_collector(room_id, platform, monitor_type, redis_room_id)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -372,17 +382,24 @@ def stop_monitor(body: dict):
     if not room_id:
         raise HTTPException(status_code=400, detail="room_id is required")
 
-    # 提取原始 ID（collector 用原始 ID 存储）
-    raw_id = room_id.split(":")[-1] if ":" in room_id else room_id
+    # 将 room_id 转换为完整的 redis_room_id 格式（与 start_monitor 保持一致）
+    if len(room_id.split(":")) == 1:
+        # raw_id 格式：只有数字或 BV 号，需要补上前缀
+        if room_id.startswith("BV"):
+            redis_room_id = f"bilibili_video:{room_id}"
+        else:
+            redis_room_id = f"bilibili_live:{room_id}"
+    else:
+        redis_room_id = room_id
 
     try:
-        _stop_collector(raw_id)
+        _stop_collector(redis_room_id)
     except Exception as e:
         logger.warning("Stop collector error: %s", e)
 
     # 更新 Redis room 状态（保留在 ZSET 中，status=STOPPED 按钮会变绿）
     r = _get_redis()
-    room_key = f"room:info:{room_id}"
+    room_key = f"room:info:{redis_room_id}"
     r.hset(room_key, "status", "STOPPED")
 
     return {"data": None}
@@ -405,22 +422,32 @@ def delete_monitor(body: dict):
     if not room_id:
         raise HTTPException(status_code=400, detail="room_id is required")
 
-    # 提取原始 ID 并停止 collector
-    raw_id = room_id.split(":")[-1] if ":" in room_id else room_id
+    # 统一转换为带前缀的 redis_room_id
+    if ":" not in room_id:
+        if room_id.startswith("BV"):
+            redis_room_id = f"bilibili_video:{room_id}"
+        else:
+            redis_room_id = f"bilibili_live:{room_id}"
+    else:
+        redis_room_id = room_id
+
+    # 停止 collector
     try:
-        _stop_collector(raw_id)
+        _stop_collector(redis_room_id)
     except Exception as e:
         logger.warning("Stop collector error: %s", e)
 
     # 从 Redis 彻底删除
     r = _get_redis()
-    room_key = f"room:info:{room_id}"
+    room_key = f"room:info:{redis_room_id}"
     r.delete(room_key)
-    r.zrem("current_hot_rooms", room_id)
-    r.delete(f"history:{room_id}")
-    r.delete(f"wordcloud:{room_id}")
-    r.delete(f"sentiment:{room_id}")
-    r.delete(f"sentiment:current:{room_id}")
+    r.zrem("current_hot_rooms", redis_room_id)
+    
+    # 删除关联数据
+    r.delete(f"history:{redis_room_id}")
+    r.delete(f"wordcloud:{redis_room_id}")
+    r.delete(f"sentiment:{redis_room_id}")
+    r.delete(f"sentiment:current:{redis_room_id}")
 
     return {"data": {"msg": "已删除"}}
 
@@ -513,3 +540,43 @@ def dashboard_stats():
             "total_heat": int(total_heat),
         }
     }
+
+
+# ============================================================
+# 启动恢复（从 Redis 恢复 RUNNING 状态的房间监听）
+# ============================================================
+
+def _recover_running_collectors() -> None:
+    """
+    扫描 Redis 中所有 room:info:* 且 status=RUNNING 的房间，
+    自动启动对应 collector 进程。用于后端重启后自动恢复监控。
+    """
+    r = _get_redis()
+    recovered = 0
+    for key in r.scan_iter("room:info:*"):
+        status = r.hget(key, "status")
+        if status != "RUNNING":
+            continue
+        # 从 key 提取 redis_room_id，如 "room:info:bilibili_live:732" → "bilibili_live:732"
+        redis_room_id = key.replace("room:info:", "")
+        # 从 redis_room_id 提取 raw_id
+        raw_id = redis_room_id.split(":")[-1]
+        # 判断类型
+        if "video" in redis_room_id:
+            collector_type = "video"
+        else:
+            collector_type = "live"
+        try:
+            _start_collector(raw_id, "bilibili", collector_type, redis_room_id)
+            logger.info("Recovered collector for %s", redis_room_id)
+            recovered += 1
+        except Exception as e:
+            logger.warning("Failed to recover collector for %s: %s", redis_room_id, e)
+    if recovered > 0:
+        logger.info("Startup recovery: %d collector(s) restored", recovered)
+
+
+# 在模块加载时执行一次恢复（FastAPI startup 事件会在 lifespan 中触发）
+# 为避免在 import 时执行，暴露为显式调用函数
+def trigger_startup_recovery():
+    _recover_running_collectors()

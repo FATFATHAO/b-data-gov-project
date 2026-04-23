@@ -22,6 +22,9 @@ async def lifespan(app: FastAPI):
     init_etl_tables()
     # 用户认证表
     init_auth_tables()
+    # 启动时恢复所有 RUNNING 状态的房间监听
+    from backend.routers.monitor import trigger_startup_recovery
+    trigger_startup_recovery()
     yield
 
 
