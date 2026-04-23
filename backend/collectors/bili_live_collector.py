@@ -23,6 +23,10 @@ if _root not in sys.path:
 
 from kafka import KafkaProducer
 from bilibili_api import live, Credential
+from bilibili_api.utils.network import select_client
+
+# 切换到 aiohttp 客户端，避免 curl-cffi 的 websocket segfault 问题
+select_client("aiohttp")
 
 from .config import KAFKA_BOOTSTRAP_SERVERS, DANMAKU_RAW_TOPIC, BILI_SESSDATA, BILI_BILI_JCT, BILI_BUVID3, BILI_BUVID4
 

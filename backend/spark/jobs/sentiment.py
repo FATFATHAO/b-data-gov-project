@@ -43,12 +43,13 @@ from pyspark.sql import functions as F
 from pyspark.sql.types import StructType, StructField, StringType, LongType, FloatType
 
 # 添加项目根目录到 path
-_root = "/mnt/data/ArchLinux/Projects/b-data-gov-project/backend"
+_root = "/mnt/data/ArchLinux/Projects/b-data-gov-project"
 if _root not in sys.path:
     sys.path.insert(0, _root)
 
 from spark.spark_session import create_spark_session, stop_spark_session
 from spark.utils.sentiment_dict import analyze_sentiment, DICT_POS, DICT_NEG
+from backend.config import KAFKA_BOOTSTRAP_SERVERS, DANMAKU_RAW_TOPIC, DANMAKU_SENTIMENT_TOPIC
 
 # 日志配置
 logging.basicConfig(
@@ -60,9 +61,9 @@ logger = logging.getLogger("spark_sentiment")
 
 
 # Kafka 配置
-KAFKA_BOOTSTRAP_SERVERS = "localhost:9092"
-INPUT_TOPIC = "danmaku_raw"
-OUTPUT_TOPIC = "danmaku_sentiment"
+KAFKA_BOOTSTRAP_SERVERS = KAFKA_BOOTSTRAP_SERVERS
+INPUT_TOPIC = DANMAKU_RAW_TOPIC
+OUTPUT_TOPIC = DANMAKU_SENTIMENT_TOPIC
 
 # 窗口配置 - 视频
 VIDEO_WINDOW_DURATION = "5 minutes"

@@ -24,6 +24,7 @@ _root = Path(__file__).parent.parent
 if str(_root) not in sys.path:
     sys.path.insert(0, str(_root))
 
+from backend.config import BILI_SESSDATA
 from backend.database import get_connection
 
 # bilibili-api-python
@@ -41,13 +42,12 @@ logger = logging.getLogger("etl_service")
 # ============================================================
 
 def _build_credential() -> Credential:
-    sessdata = os.environ.get("BILI_SESSDATA", "").strip()
-    if not sessdata:
+    if not BILI_SESSDATA:
         raise RuntimeError(
             "未找到 BILI_SESSDATA 环境变量。"
-            "请先设置：export BILI_SESSDATA='your_sessdata_here'"
+            "请在 backend/.env 中设置 BILI_SESSDATA"
         )
-    return Credential(sessdata=sessdata)
+    return Credential(sessdata=BILI_SESSDATA)
 
 
 # ============================================================

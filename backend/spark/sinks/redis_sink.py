@@ -30,11 +30,12 @@ from pyspark.sql import functions as F
 from pyspark.sql.types import StructType, StructField, StringType, IntegerType, FloatType, LongType
 
 # 添加项目根目录到 path
-_root = "/mnt/data/ArchLinux/Projects/b-data-gov-project/backend"
+_root = "/mnt/data/ArchLinux/Projects/b-data-gov-project"
 if _root not in sys.path:
     sys.path.insert(0, _root)
 
 from spark.spark_session import create_spark_session, stop_spark_session
+from backend.config import KAFKA_BOOTSTRAP_SERVERS, REDIS_HOST, REDIS_PORT, DANMAKU_RAW_TOPIC, KAFKA_AGG_TOPIC, KAFKA_SENTIMENT_TOPIC, KAFKA_WORDCLOUD_TOPIC
 
 # 日志配置
 logging.basicConfig(
@@ -46,12 +47,12 @@ logger = logging.getLogger("spark_redis_sink")
 
 
 # Kafka 配置
-KAFKA_BOOTSTRAP_SERVERS = "localhost:9092"
-INPUT_TOPICS = "danmaku_agg,danmaku_sentiment,danmaku_wordcloud"
+KAFKA_BOOTSTRAP_SERVERS = KAFKA_BOOTSTRAP_SERVERS
+INPUT_TOPICS = f"{DANMAKU_RAW_TOPIC},{KAFKA_AGG_TOPIC},{KAFKA_SENTIMENT_TOPIC},{KAFKA_WORDCLOUD_TOPIC}"
 
 # Redis 配置
-REDIS_HOST = "localhost"
-REDIS_PORT = 6379
+REDIS_HOST = REDIS_HOST
+REDIS_PORT = REDIS_PORT
 REDIS_DB = 0
 REDIS_PASSWORD: Optional[str] = None
 
@@ -73,6 +74,8 @@ def get_agg_schema() -> StructType:
         StructField("room_id", StringType(), True),
         StructField("count", IntegerType(), True),
         StructField("type", StringType(), True),
+        StructField("window_start", StringType(), True),
+        StructField("window_end", StringType(), True),
     ])
 
 
@@ -83,6 +86,8 @@ def get_sentiment_schema() -> StructType:
         StructField("type", StringType(), True),
         StructField("value", FloatType(), True),
         StructField("count", IntegerType(), True),
+        StructField("window_start", StringType(), True),
+        StructField("window_end", StringType(), True),
     ])
 
 
@@ -92,6 +97,7 @@ def get_wordcloud_schema() -> StructType:
         StructField("room_id", StringType(), True),
         StructField("type", StringType(), True),
         StructField("data", StringType(), True),  # JSON string
+        StructField("window_start", StringType(), True),
     ])
 
 
@@ -317,29 +323,64 @@ def run_redis_sink(
         if batch_df.isEmpty():
             return
 
-        # 写入 agg 数据
-        agg_batch = batch_df.filter(F.col("count").isNotNull())
-        for row in agg_batch.collect():
-            try:
-                writer.add_agg(row.room_id, row.count, getattr(row, "ts_str", None))
-            except Exception as e:
-                logger.warning(f"Failed to add agg: {e}")
+        # 从 batch_df 重新解析 agg 数据
+        agg_schema = get_agg_schema()
+        try:
+            agg_parsed = batch_df.filter(F.col("input_topic") == "danmaku_agg")
+            agg_df2 = (
+                agg_parsed.select(
+                    F.from_json(F.col("value_str"), agg_schema).alias("data"),
+                    F.col("event_time")
+                )
+                .select("data.*", F.col("event_time").alias("ts"))
+                .withColumn("ts_str", F.date_format(F.col("ts"), "yyyy-MM-dd HH:mm:ss"))
+            )
+            for row in agg_df2.collect():
+                try:
+                    row_dict = row.asDict()
+                    writer.add_agg(row_dict["room_id"], int(row_dict["count"]), row_dict.get("ts_str"))
+                except Exception as e:
+                    logger.warning(f"Failed to add agg: {e}")
+        except Exception as e:
+            logger.warning(f"Failed to parse agg: {e}")
 
-        # 写入 sentiment 数据
-        sentiment_batch = batch_df.filter(F.col("value").isNotNull())
-        for row in sentiment_batch.collect():
-            try:
-                writer.add_sentiment(row.room_id, float(row.value), int(row.count))
-            except Exception as e:
-                logger.warning(f"Failed to add sentiment: {e}")
+        # 从 batch_df 重新解析 sentiment 数据
+        sentiment_schema = get_sentiment_schema()
+        try:
+            sent_parsed = batch_df.filter(F.col("input_topic") == "danmaku_sentiment")
+            sent_df2 = (
+                sent_parsed.select(
+                    F.from_json(F.col("value_str"), sentiment_schema).alias("data")
+                )
+                .select("data.*")
+            )
+            for row in sent_df2.collect():
+                try:
+                    row_dict = row.asDict()
+                    writer.add_sentiment(row_dict["room_id"], float(row_dict["value"]), int(row_dict["count"]))
+                except Exception as e:
+                    logger.warning(f"Failed to add sentiment: {e}")
+        except Exception as e:
+            logger.warning(f"Failed to parse sentiment: {e}")
 
-        # 写入 wordcloud 数据
-        wordcloud_batch = batch_df.filter(F.col("data").isNotNull())
-        for row in wordcloud_batch.collect():
-            try:
-                writer.add_wordcloud(row.room_id, row.data)
-            except Exception as e:
-                logger.warning(f"Failed to add wordcloud: {e}")
+        # 从 batch_df 重新解析 wordcloud 数据
+        wordcloud_schema = get_wordcloud_schema()
+        try:
+            wc_parsed = batch_df.filter(F.col("input_topic") == "danmaku_wordcloud")
+            wc_df2 = (
+                wc_parsed.select(
+                    F.from_json(F.col("value_str"), wordcloud_schema).alias("data")
+                )
+                .select("data.*")
+            )
+            for row in wc_df2.collect():
+                try:
+                    row_dict = row.asDict()
+                    writer.add_wordcloud(row_dict["room_id"], row_dict["data"])
+                except Exception as e:
+                    logger.warning(f"Failed to add wordcloud: {e}")
+        except Exception as e:
+            logger.warning(f"Failed to parse wordcloud: {e}")
 
         # 刷新到 Redis
         writer.flush()

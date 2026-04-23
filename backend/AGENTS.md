@@ -206,25 +206,50 @@ uv run python backend/bili_spider_etl.py
 
 ## 环境变量
 
-```env
-# 数据库
-DATABASE_URL=postgresql://user:pass@localhost:5432/dbname
-DUCKDB_PATH=backend/data/b_data_gov.duckdb
+> **注意**: 所有环境变量配置已迁移到 `backend/.env` 文件。
+> 复制 `.env.example` 模板并填入实际值即可：
+> ```bash
+> cp .env.example .env
+> ```
 
-# Redis
+### .env.example 配置项说明
+
+```env
+# ============================================================
+# B站 API 凭证 (必需)
+# ============================================================
+BILI_SESSDATA=your_sessdata_here      # B站登录凭证
+BILI_BILI_JCT=your_bili_jct           # CSRF token
+BILI_BUVID3=your_buvid3               # 设备标识，防412错误
+BILI_BUVID4=your_buvid4               # 设备标识，防412错误
+
+# ============================================================
+# Kafka 配置
+# ============================================================
+KAFKA_BOOTSTRAP_SERVERS=localhost:9092
+
+# ============================================================
+# Redis 配置
+# ============================================================
 REDIS_HOST=localhost
 REDIS_PORT=6379
 
-# Kafka
-KAFKA_BOOTSTRAP_SERVERS=localhost:9092
+# ============================================================
+# 数据库配置
+# ============================================================
+DATABASE_URL=postgresql://user:pass@localhost:5432/dbname
+DUCKDB_PATH=backend/data/b_data_gov.duckdb
 
-# B站 API
-BILI_SESSDATA=your_sessdata_here
-BILI_BILI_JCT=your_bili_jct
-BILI_BUVID3=your_buvid3
-BILI_BUVID4=your_buvid4
-BILI_ROOM_ID=732
-BILI_BV_ID=BVxxxxxx
+# ============================================================
+# Spark 配置
+# ============================================================
+SPARK_HOME=/opt/spark
+
+# ============================================================
+# Collectors 采集器默认配置
+# ============================================================
+BILI_ROOM_ID=732                      # 默认直播间
+BILI_BV_ID=BVxxxxxx                  # 默认视频BV号
 ```
 
 ## 注意事项

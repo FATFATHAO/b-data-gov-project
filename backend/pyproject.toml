@@ -20,4 +20,8 @@ dependencies = [
     "jieba>=0.42.1",
     "snownlp>=0.12.2",
     "pyarrow",
+    # Kafka & Config
+    "kafka-python>=2.0.2",
+    "python-dotenv>=1.0.0",
+    "curl-cffi>=0.15.0",
 ]

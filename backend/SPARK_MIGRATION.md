@@ -1,6 +1,6 @@
 # Flink → Spark 迁移完成文档
 
-> 更新日期: 2026-04-20
+> 更新日期: 2026-04-22
 
 ## 一、迁移概述
 
@@ -248,20 +248,13 @@ python -m spark.sinks.redis_sink --kafka localhost:9092
 
 ### 6.6 环境变量
 
-```bash
-# B站 API 凭证 (必需)
-export BILI_SESSDATA="your_sessdata_here"
-export BILI_BILI_JCT="your_bili_jct"      # 可选
-export BILI_BUVID3="your_buvid3"          # 可选，防 412 错误
-export BILI_BUVID4="your_buvid4"          # 可选，防 412 错误
+> **注意**: 配置已迁移到 `backend/.env` 文件：
+> ```bash
+> cp .env.example .env
+> # 编辑 .env 填入实际值
+> ```
 
-# Collector 配置
-export BILI_ROOM_ID=732                   # 默认直播间
-export BILI_BV_ID=BVxxxxxx                # 视频 BV 号
-export KAFKA_BOOTSTRAP_SERVERS=localhost:9092
-export REDIS_HOST=localhost
-export REDIS_PORT=6379
-```
+所有环境变量见 `.env.example` 文件注释说明。
 
 ## 七、验证方法
 

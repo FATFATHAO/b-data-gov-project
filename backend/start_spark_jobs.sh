@@ -9,7 +9,21 @@ set -e
 
 # 配置
 BACKEND_DIR="/mnt/data/ArchLinux/Projects/b-data-gov-project/backend"
-SPARK_HOME="${SPARK_HOME:-/opt/spark}"
+
+# 加载 .env 文件中的环境变量
+if [ -f "${BACKEND_DIR}/.env" ]; then
+    set -a
+    source "${BACKEND_DIR}/.env"
+    set +a
+fi
+
+# 配置 (使用环境变量或默认值)
+# 设置 SPARK_HOME 指向 venv 中的 PySpark（含 embedded Spark + spark-submit）
+export SPARK_HOME="${BACKEND_DIR}/.venv/lib/python3.13/site-packages/pyspark"
+export PATH="${SPARK_HOME}/bin:${PATH}"
+# Python 版本一致性（解决 PySpark worker 与 driver 的 Python 版本冲突）
+export PYSPARK_PYTHON="${BACKEND_DIR}/.venv/bin/python"
+export PYSPARK_DRIVER_PYTHON="${BACKEND_DIR}/.venv/bin/python"
 KAFKA_SERVERS="${KAFKA_SERVERS:-localhost:9092}"
 REDIS_HOST="${REDIS_HOST:-localhost}"
 REDIS_PORT="${REDIS_PORT:-6379}"
@@ -18,7 +32,6 @@ BILI_BV_ID="${BILI_BV_ID:-}"
 
 # PySpark 参数
 PYTHON_PATH="${BACKEND_DIR}:${BACKEND_DIR}/spark/jobs:${BACKEND_DIR}/spark/utils:${BACKEND_DIR}/spark/sinks"
-SPARK_PACKAGES="org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.0"
 
 # Python 解释器
 PYTHON="${BACKEND_DIR}/.venv/bin/python"

@@ -137,12 +137,13 @@ def replay_to_kafka(danmaku_list: list[dict], kafka_servers: str, topic: str, sp
         logger.info("重放完成")
 
         # 发送FLUSH信号强制关闭Spark窗口
+        # content 格式: "FLUSH:{room_id}"，供 Spark danmaku_count 识别目标房间
         logger.info("发送FLUSH信号")
         flush_msg = {
             "platform": "system",
             "room_id": "system_flush",
             "user": {"id": "0", "name": "system"},
-            "content": "FLUSH",
+            "content": f"FLUSH:{room_id}",  # 例如 "FLUSH:bilibili_video:BVxxx"
             "event_type": "danmaku",
             "ts": int(time.time() * 1000) + 60000,
         }

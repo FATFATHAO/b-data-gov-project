@@ -1,4 +1,9 @@
+# 触发 backend.config 加载 .env 环境变量（必须在前）
+from backend.config import DATABASE_URL
+
 from pathlib import Path
+from urllib.parse import urlparse
+import os
 import duckdb
 import psycopg2
 from psycopg2.extras import RealDictCursor
@@ -7,14 +12,29 @@ from psycopg2.extras import RealDictCursor
 DB_PATH = Path(__file__).parent / "data" / "b_data_gov.duckdb"
 DB_PATH.parent.mkdir(parents=True, exist_ok=True)
 
-# PostgreSQL 配置
-PG_CONFIG = {
-    "host": "127.0.0.1",
-    "port": 45432,
-    "database": "course",
-    "user": "postgres",
-    "password": "difyai123456",
-}
+# PostgreSQL 配置 - 从 DATABASE_URL 解析
+def _parse_postgres_config():
+    """从 DATABASE_URL 环境变量解析 PostgreSQL 配置"""
+    database_url = os.getenv("DATABASE_URL", "")
+    if database_url:
+        parsed = urlparse(database_url)
+        return {
+            "host": parsed.hostname or "localhost",
+            "port": parsed.port or 5432,
+            "database": parsed.path.lstrip("/") if parsed.path else "dbname",
+            "user": parsed.username or "postgres",
+            "password": parsed.password or "",
+        }
+    # fallback 默认值 (Docker 环境)
+    return {
+        "host": "postgres",
+        "port": 5432,
+        "database": "dbname",
+        "user": "bdata",
+        "password": "bdata123456",
+    }
+
+PG_CONFIG = _parse_postgres_config()
 
 
 def get_connection() -> duckdb.DuckDBPyConnection:

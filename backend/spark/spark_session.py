@@ -4,9 +4,17 @@ SparkSession 初始化模块
 提供统一的 SparkSession 创建和管理功能。
 """
 
+import os
+from pathlib import Path
 from typing import Optional
 from pyspark.sql import SparkSession
 from pyspark import SparkConf
+
+# PySpark bundled Spark 根目录（SPARK_HOME 由启动脚本在运行时设置）
+_PYSPARK_HOME = os.environ.get(
+    "SPARK_HOME",
+    str(Path(__file__).parent.parent / ".venv" / "lib" / "python3.13" / "site-packages" / "pyspark")
+)
 
 
 def create_spark_session(
@@ -27,6 +35,9 @@ def create_spark_session(
     """
     conf = SparkConf()
 
+    # PySpark 4.x + Scala 2.13 的 Kafka 连接器包
+    conf.set("spark.jars.packages", "org.apache.spark:spark-sql-kafka-0-10_2.13:4.1.1")
+
     # Streaming 配置
     conf.set("spark.sql.streaming.checkpointLocation", checkpoint_dir)
 
@@ -41,10 +52,19 @@ def create_spark_session(
     # 序列化配置
     conf.set("spark.serializer", "org.apache.spark.serializer.KryoSerializer")
 
+    # 禁用状态算子正确性检查（允许无界状态累积用于 top-n）
+    conf.set("spark.sql.streaming.statefulOperator.checkCorrectness.enabled", "false")
+
+    # Python 版本一致性配置
+    venv_python = str(Path(__file__).parent.parent / ".venv" / "bin" / "python")
+    conf.set("spark.pyspark.python", venv_python)
+    conf.set("spark.pyspark.driver.python", venv_python)
+
     builder = SparkSession.builder.appName(app_name).config(conf=conf)
 
     if master:
         builder = builder.master(master)
+    # master=None 时默认 local[*]
 
     spark = builder.getOrCreate()
 

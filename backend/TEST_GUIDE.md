@@ -1,29 +1,50 @@
 # B站爬虫脚本测试指南
 
-> 更新日期: 2026-04-21
+> 更新日期: 2026-04-22
 
 ## 准备工作
 
-### 环境变量
+### 1. 复制环境变量模板
 
 ```bash
 cd /mnt/data/ArchLinux/Projects/b-data-gov-project/backend
 
-# B站凭证（必需）
-export BILI_SESSDATA="your_sessdata_here"
-export BILI_BILI_JCT="your_bili_jct"
-export BILI_BUVID3="your_buvid3"
-export BILI_BUVID4="your_buvid4"
+# 复制环境变量模板
+cp .env.example .env
 
-# Kafka（默认 localhost:9092）
-export KAFKA_BOOTSTRAP_SERVERS=localhost:9092
+# 编辑 .env 文件，填入你的 B站凭证
+nano .env
 ```
 
-### 前置条件
+### 2. .env 文件配置项
+
+```bash
+# ============================================================
+# B站 API 凭证 (必需)
+# ============================================================
+BILI_SESSDATA=your_sessdata_here
+BILI_BILI_JCT=your_bili_jct
+BILI_BUVID3=your_buvid3
+BILI_BUVID4=your_buvid4
+
+# ============================================================
+# Kafka 配置
+# ============================================================
+KAFKA_BOOTSTRAP_SERVERS=localhost:9092
+
+# ============================================================
+# Collectors 默认配置
+# ============================================================
+BILI_ROOM_ID=732
+BILI_BV_ID=BV1xx411c7mD
+```
+
+### 3. 前置条件
 
 - Kafka 已启动，确保 `danmaku_raw` topic 存在
 - Redis 已启动（用于验证 Spark 输出）
 - 虚拟环境已安装：`cd backend && source .venv/bin/activate`
+- 已运行 `uv sync` 安装依赖
 
 ---
 
@@ -234,4 +255,3 @@ pkill -f danmaku_count
 # 或使用停止脚本
 ./start_spark_jobs.sh stop
 ```
-

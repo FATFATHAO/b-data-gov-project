@@ -46,12 +46,13 @@ from pyspark.sql.types import StructType, StructField, StringType, LongType, Int
 from pyspark.sql.types import ArrayType
 
 # 添加项目根目录到 path
-_root = "/mnt/data/ArchLinux/Projects/b-data-gov-project/backend"
+_root = "/mnt/data/ArchLinux/Projects/b-data-gov-project"
 if _root not in sys.path:
     sys.path.insert(0, _root)
 
 from spark.spark_session import create_spark_session, stop_spark_session
 from spark.utils.stopwords import filter_stopwords
+from backend.config import KAFKA_BOOTSTRAP_SERVERS, DANMAKU_RAW_TOPIC, DANMAKU_WORDCLOUD_TOPIC
 
 # 日志配置
 logging.basicConfig(
@@ -63,9 +64,9 @@ logger = logging.getLogger("spark_wordcloud")
 
 
 # Kafka 配置
-KAFKA_BOOTSTRAP_SERVERS = "localhost:9092"
-INPUT_TOPIC = "danmaku_raw"
-OUTPUT_TOPIC = "danmaku_wordcloud"
+KAFKA_BOOTSTRAP_SERVERS = KAFKA_BOOTSTRAP_SERVERS
+INPUT_TOPIC = DANMAKU_RAW_TOPIC
+OUTPUT_TOPIC = DANMAKU_WORDCLOUD_TOPIC
 
 # 窗口配置 - 视频 (GlobalWindow 每5秒)
 VIDEO_TRIGGER_INTERVAL = "5 seconds"
@@ -173,29 +174,21 @@ def process_video_stream(spark: SparkSession, kafka_bootstrap: str) -> None:
         .agg(F.count("*").alias("count"))
     )
 
-    # 按 room_id 分组，取 Top N
-    from pyspark.sql import Window
-
-    window_spec = (
-        Window
-        .partitionBy("room_id")
-        .orderBy(F.desc("count"))
-    )
-
-    ranked_df = word_count_df.withColumn("rank", F.row_number().over(window_spec))
-    top_words_df = ranked_df.filter(F.col("rank") <= TOP_N_WORDS)
-
-    # 聚合为数组
+    # 按 room_id 分组，限制每个 room_id 最多 TOP_N_WORDS 条
     result_df = (
-        top_words_df
+        words_df
+        .groupBy(F.col("room_id"), F.col("word"))
+        .agg(F.count("*").alias("count"))
         .groupBy(F.col("room_id"))
         .agg(
-            F.collect_list(
-                F.struct(F.col("word").alias("name"), F.col("count").alias("value"))
-            ).alias("data"),
-            F.max(F.col("ts")).alias("ts")
+            F.slice(
+                F.collect_list(F.struct(F.col("word").alias("name"), F.col("count").alias("value"))),
+                1,
+                TOP_N_WORDS
+            ).alias("data")
         )
         .withColumn("type", F.lit("wordcloud"))
+        .withColumn("ts", F.lit(0))
         .select(
             F.col("room_id"),
             F.col("type"),
@@ -268,6 +261,7 @@ def process_live_stream(spark: SparkSession, kafka_bootstrap: str) -> None:
         .select(
             F.col("room_id"),
             F.col("ts"),
+            F.col("ts_ms"),
             F.explode(F.col("words")).alias("word")
         )
     )
@@ -277,34 +271,23 @@ def process_live_stream(spark: SparkSession, kafka_bootstrap: str) -> None:
         words_df
         .withWatermark("ts_ms", WATERMARK_DELAY)
         .groupBy(
-            F.window(F.col("ts_ms"), LIVE_WINDOW_DURATION, LIVE_WINDOW_SLIDE),
             F.col("room_id"),
-            F.col("word")
+            F.col("word"),
+            F.window(F.col("ts_ms"), LIVE_WINDOW_DURATION, LIVE_WINDOW_SLIDE)
         )
         .agg(F.count("*").alias("count"))
     )
 
-    # 按 room_id 和 window 分组，取 Top N
-    from pyspark.sql import Window
-
-    window_spec = (
-        Window
-        .partitionBy("room_id", "window")
-        .orderBy(F.desc("count"))
-    )
-
-    ranked_df = windowed_df.withColumn("rank", F.row_number().over(window_spec))
-    top_words_df = ranked_df.filter(F.col("rank") <= TOP_N_WORDS)
-
-    # 聚合为数组
+    # 按 room_id 和 window 分组，限制每个分组最多 TOP_N_WORDS 条
     result_df = (
-        top_words_df
+        windowed_df
         .groupBy(F.col("room_id"), F.col("window"))
         .agg(
-            F.collect_list(
-                F.struct(F.col("word").alias("name"), F.col("count").alias("value"))
-            ).alias("data"),
-            F.max(F.col("ts")).alias("ts")
+            F.slice(
+                F.collect_list(F.struct(F.col("word").alias("name"), F.col("count").alias("value"))),
+                1,
+                TOP_N_WORDS
+            ).alias("data")
         )
         .withColumn("type", F.lit("wordcloud"))
         .withColumn(
@@ -314,7 +297,7 @@ def process_live_stream(spark: SparkSession, kafka_bootstrap: str) -> None:
         .select(
             F.col("room_id"),
             F.col("type"),
-            F.col("ts"),
+            F.lit(0).alias("ts"),
             F.col("data"),
             F.col("window_start_str").alias("window_start")
         )
@@ -355,9 +338,6 @@ def run_wordcloud(spark: SparkSession, kafka_bootstrap: str) -> None:
     """
     logger.info("Starting wordcloud job")
 
-    # 处理视频流
-    video_query = process_video_stream(spark, kafka_bootstrap)
-
     # 处理直播流
     live_query = process_live_stream(spark, kafka_bootstrap)
 
@@ -367,13 +347,8 @@ def run_wordcloud(spark: SparkSession, kafka_bootstrap: str) -> None:
     def await_query(q):
         q.awaitTermination()
 
-    video_thread = Thread(target=await_query, args=(video_query,))
     live_thread = Thread(target=await_query, args=(live_query,))
-
-    video_thread.start()
     live_thread.start()
-
-    video_thread.join()
     live_thread.join()
 
 

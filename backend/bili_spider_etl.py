@@ -29,6 +29,7 @@ if _root not in sys.path:
 import polars as pl
 import duckdb
 
+from backend.config import BILI_SESSDATA, BILI_BILI_JCT, BILI_BUVID3, BILI_BUVID4
 from backend.database import get_connection, init_etl_tables
 
 # ============================================================
@@ -65,28 +66,40 @@ logger = logging.getLogger("bili_etl")
 # ============================================================
 
 def _build_credential() -> Credential:
-    sessdata = os.environ.get("BILI_SESSDATA", "").strip()
-    if not sessdata:
+    if not BILI_SESSDATA:
         raise RuntimeError(
             "未找到 BILI_SESSDATA 环境变量。"
-            "请先设置：export BILI_SESSDATA='your_sessdata_here'"
+            "请在 backend/.env 中设置 BILI_SESSDATA，或先运行: export BILI_SESSDATA='your_sessdata_here'"
         )
 
     # v17.4.1 WBI 接口需要 buvid3 配合签名，尝试从环境获取
-    buvid3 = os.environ.get("BILI_BUVID3", "").strip()
+    buvid3 = BILI_BUVID3 if BILI_BUVID3 else ""
 
-    logger.info("SESSDATA 已加载（长度=%d）", len(sessdata))
+    logger.info("SESSDATA 已加载（长度=%d）", len(BILI_SESSDATA))
     if buvid3:
         logger.info("BUVID3 已加载")
-        return Credential(sessdata=sessdata, buvid3=buvid3)
+        return Credential(sessdata=BILI_SESSDATA, buvid3=buvid3)
     else:
         logger.info("BUVID3 未提供，将自动生成（可能触发风控）")
-        return Credential(sessdata=sessdata)
+        return Credential(sessdata=BILI_SESSDATA)
 
 
 # ============================================================
 # Bilibili 数据抓取（异步）
 # ============================================================
+
+async def fetch_up_name(uid: int, credential: Credential) -> str:
+    """根据 UID 获取 UP 主昵称"""
+    try:
+        u = user.User(uid=uid, credential=credential)
+        info = await u.get_user_info()
+        name = info.get("name", str(uid))
+        logger.info("自动获取 UP 主名称: %s", name)
+        return name
+    except Exception as e:
+        logger.warning("获取 UP 主名称失败，使用 UID 代替: %s", e)
+        return str(uid)
+
 
 async def fetch_user_videos(
     uid: int,
@@ -505,10 +518,6 @@ def check_recent_run() -> bool:
 
 async def run_etl() -> None:
     """ETL 主流程：抽取 → 清洗 → 加载"""
-    logger.info("=" * 50)
-    logger.info("B站 ETL 流水线启动 | UP: %s (UID: %d)", TARGET_UP_NAME, TARGET_UP_UID)
-    logger.info("=" * 50)
-
     # 0. 初始化 ETL 表
     init_etl_tables()
     logger.info("ETL 表初始化完成")
@@ -520,7 +529,15 @@ async def run_etl() -> None:
     # 2. 构建凭证
     credential = _build_credential()
 
-    # 3. 抽取（并发爬虫）
+    # 3. 自动获取 UP 主名称
+    global TARGET_UP_NAME
+    TARGET_UP_NAME = await fetch_up_name(TARGET_UP_UID, credential)
+
+    logger.info("=" * 50)
+    logger.info("B站 ETL 流水线启动 | UP: %s (UID: %d)", TARGET_UP_NAME, TARGET_UP_UID)
+    logger.info("=" * 50)
+
+    # 4. 抽取（并发爬虫）
     comments, api_success, api_fail = await crawl_all(credential)
 
     if not comments:
@@ -560,6 +577,16 @@ async def run_etl() -> None:
 
 def main():
     """入口函数"""
+    import argparse
+
+    parser = argparse.ArgumentParser(description="B站 ETL 爬虫")
+    parser.add_argument("--uid", type=int, default=None, help="UP主 UID (默认: 517327498)")
+    args = parser.parse_args()
+
+    # 覆盖模块级变量，供内部函数使用
+    global TARGET_UP_UID
+    TARGET_UP_UID = args.uid if args.uid is not None else 517327498
+
     try:
         asyncio.run(run_etl())
     except KeyboardInterrupt:

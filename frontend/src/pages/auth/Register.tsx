@@ -14,6 +14,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import request from "@/api/request";
 
 const registerSchema = z
   .object({
@@ -44,19 +45,11 @@ export function RegisterPage() {
 
   const onSubmit = async (values: RegisterFormValues) => {
     try {
-      const response = await fetch("http://localhost:8000/api/auth/register", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          username: values.username,
-          nickname: values.nickname,
-          password: values.password,
-        }),
+      await request.post("/api/auth/register", {
+        username: values.username,
+        nickname: values.nickname,
+        password: values.password,
       });
-
-      if (!response.ok) {
-        throw new Error("注册失败");
-      }
 
       toast.success("注册成功，请登录");
       navigate("/login");

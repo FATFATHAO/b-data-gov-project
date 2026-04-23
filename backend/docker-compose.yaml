@@ -1,0 +1,71 @@
+version: "3.8"
+
+services:
+  # ----------------------------------------
+  # PostgreSQL (用户认证与元数据)
+  # ----------------------------------------
+  postgres:
+    image: postgres:15-alpine
+    container_name: b_data_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: bdata
+      POSTGRES_PASSWORD: bdata123456
+      POSTGRES_DB: dbname
+    ports:
+      - "5432:5432" # 用 Navicat 连，保留这个映射
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+
+  # ----------------------------------------
+  # Redis (缓存与可能的消息队列)
+  # ----------------------------------------
+  redis:
+    image: redis:7-alpine
+    container_name: b_data_redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+
+  # ----------------------------------------
+  # Kafka (KRaft模式，无需 Zookeeper，更轻量)
+  # ----------------------------------------
+  kafka:
+    image: bitnamilegacy/kafka:latest
+    container_name: b_data_kafka
+    restart: unless-stopped
+    ports:
+      - "9092:9092"
+    environment:
+      - KAFKA_CFG_NODE_ID=1
+      - KAFKA_CFG_PROCESS_ROLES=broker,controller
+      - KAFKA_CFG_CONTROLLER_LISTENER_NAMES=CONTROLLER
+      - KAFKA_CFG_LISTENERS=PLAINTEXT://:9092,CONTROLLER://:9093
+      - KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP=CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      - KAFKA_CFG_ADVERTISED_LISTENERS=PLAINTEXT://localhost:9092
+      - KAFKA_CFG_CONTROLLER_QUORUM_VOTERS=1@kafka:9093
+      - ALLOW_PLAINTEXT_LISTENER=yes
+      # 自动创建 Topic
+      - KAFKA_CFG_AUTO_CREATE_TOPICS_ENABLE=true
+    volumes:
+      - kafka_data:/bitnami/kafka
+
+  # ----------------------------------------
+  # Spark (单机 Master 测试环境)
+  # ----------------------------------------
+  spark:
+    image: bitnamilegacy/spark:latest
+    container_name: b_data_spark
+    restart: unless-stopped
+    environment:
+      - SPARK_MODE=master
+    ports:
+      - "8080:8080" # Spark Web UI
+      - "7077:7077"
+
+volumes:
+  pg_data:
+  redis_data:
+  kafka_data:

@@ -1,0 +1,63 @@
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "/mnt/data/ArchLinux/Projects/b-data-gov-project/backend/spark/sinks/redis_sink.py", line 38, in <module>
+    from backend.config import KAFKA_BOOTSTRAP_SERVERS, REDIS_HOST, REDIS_PORT, DANMAKU_RAW_TOPIC, KAFKA_AGG_TOPIC, KAFKA_SENTIMENT_TOPIC, KAFKA_WORDCLOUD_TOPIC
+ModuleNotFoundError: No module named 'backend'
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "/mnt/data/ArchLinux/Projects/b-data-gov-project/backend/spark/sinks/redis_sink.py", line 38, in <module>
+    from backend.config import KAFKA_BOOTSTRAP_SERVERS, REDIS_HOST, REDIS_PORT, DANMAKU_RAW_TOPIC, KAFKA_AGG_TOPIC, KAFKA_SENTIMENT_TOPIC, KAFKA_WORDCLOUD_TOPIC
+ModuleNotFoundError: No module named 'backend'
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "/mnt/data/ArchLinux/Projects/b-data-gov-project/backend/spark/sinks/redis_sink.py", line 38, in <module>
+    from backend.config import KAFKA_BOOTSTRAP_SERVERS, REDIS_HOST, REDIS_PORT, DANMAKU_RAW_TOPIC, KAFKA_AGG_TOPIC, KAFKA_SENTIMENT_TOPIC, KAFKA_WORDCLOUD_TOPIC
+ModuleNotFoundError: No module named 'backend'
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "/mnt/data/ArchLinux/Projects/b-data-gov-project/backend/spark/sinks/redis_sink.py", line 38, in <module>
+    from backend.config import KAFKA_BOOTSTRAP_SERVERS, REDIS_HOST, REDIS_PORT, DANMAKU_RAW_TOPIC, KAFKA_AGG_TOPIC, KAFKA_SENTIMENT_TOPIC, KAFKA_WORDCLOUD_TOPIC
+ModuleNotFoundError: No module named 'backend'
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "/mnt/data/ArchLinux/Projects/b-data-gov-project/backend/spark/sinks/redis_sink.py", line 415, in <module>
+    main()
+    ~~~~^^
+  File "/mnt/data/ArchLinux/Projects/b-data-gov-project/backend/spark/sinks/redis_sink.py", line 394, in main
+    spark = create_spark_session(
+        app_name="B-DataGov-RedisSink",
+        checkpoint_dir=args.checkpoint
+    )
+  File "/mnt/data/ArchLinux/Projects/b-data-gov-project/backend/spark/spark_session.py", line 49, in create_spark_session
+    spark = builder.getOrCreate()
+  File "/mnt/data/ArchLinux/Projects/b-data-gov-project/backend/.venv/lib/python3.13/site-packages/pyspark/sql/session.py", line 557, in getOrCreate
+    sc = SparkContext.getOrCreate(sparkConf)
+  File "/mnt/data/ArchLinux/Projects/b-data-gov-project/backend/.venv/lib/python3.13/site-packages/pyspark/core/context.py", line 542, in getOrCreate
+    SparkContext(conf=conf or SparkConf())
+    ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/mnt/data/ArchLinux/Projects/b-data-gov-project/backend/.venv/lib/python3.13/site-packages/pyspark/core/context.py", line 206, in __init__
+    SparkContext._ensure_initialized(self, gateway=gateway, conf=conf)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/mnt/data/ArchLinux/Projects/b-data-gov-project/backend/.venv/lib/python3.13/site-packages/pyspark/core/context.py", line 463, in _ensure_initialized
+    SparkContext._gateway = gateway or launch_gateway(conf)
+                                       ~~~~~~~~~~~~~~^^^^^^
+  File "/mnt/data/ArchLinux/Projects/b-data-gov-project/backend/.venv/lib/python3.13/site-packages/pyspark/java_gateway.py", line 101, in launch_gateway
+    proc = Popen(command, **popen_kwargs)
+  File "/home/rosecube/.local/share/uv/python/cpython-3.13.12-linux-x86_64-gnu/lib/python3.13/subprocess.py", line 1039, in __init__
+    self._execute_child(args, executable, preexec_fn, close_fds,
+    ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                        pass_fds, cwd, env,
+                        ^^^^^^^^^^^^^^^^^^^
+    ...<5 lines>...
+                        gid, gids, uid, umask,
+                        ^^^^^^^^^^^^^^^^^^^^^^
+                        start_new_session, process_group)
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/rosecube/.local/share/uv/python/cpython-3.13.12-linux-x86_64-gnu/lib/python3.13/subprocess.py", line 1991, in _execute_child
+    raise child_exception_type(errno_num, err_msg, err_filename)
+FileNotFoundError: [Errno 2] No such file or directory: '/opt/spark/./bin/spark-submit'

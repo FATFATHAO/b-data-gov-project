@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Layout, List, Badge, Typography, Tag, Space, Empty, message, Button, Row, Col } from 'antd';
-import Icon, { BilibiliOutlined, CheckCircleOutlined, CloseCircleOutlined, FireOutlined, MinusCircleOutlined, PlayCircleOutlined, PoweroffOutlined, StarFilled, StarOutlined, SyncOutlined, TikTokOutlined } from '@ant-design/icons';
+import { Layout, List, Badge, Typography, Tag, Space, Empty, message, Button, Row, Col, Dropdown, Modal } from 'antd';
+import type { MenuProps } from 'antd';
+import Icon, { BilibiliOutlined, CheckCircleOutlined, CloseCircleOutlined, FireOutlined, MinusCircleOutlined, PlayCircleOutlined, PoweroffOutlined, StarFilled, StarOutlined, SyncOutlined, TikTokOutlined, MoreOutlined, DeleteOutlined, ExclamationCircleOutlined } from '@ant-design/icons';
 import MonitorChart from '@/components/charts/MonitorChart';
 import TaskControl from '@/components/charts/TaskControl';
-import { getRank, getHistory, getWordCloud, getSentiment, checkFavorite, toggleFavorite, stopLiveMonitor, startLiveTask } from '../api';
+import { getRank, getHistory, getWordCloud, getSentiment, checkFavorite, toggleFavorite, stopLiveMonitor, startLiveTask, deleteRoom } from '../api';
 import type { CustomIconComponentProps } from '@ant-design/icons/lib/components/Icon';
 import WordCloudChart from '@/components/charts/WordCloudChart';
 import HotWordsRank from '@/components/charts/HotWordsRank';
@@ -55,6 +56,13 @@ const PlatformMonitor: React.FC<Props> = ({ platformName, enableVideo }) => {
 
   // 暂停监控
   const [stopLoading, setStopLoading] = useState(false);
+
+  // 删除确认
+  const [deleteModal, setDeleteModal] = useState<{ open: boolean; roomId: string; title: string }>({
+    open: false,
+    roomId: '',
+    title: '',
+  });
 
   // 标题和作者
   const { displayTitle, displayAnchor } = React.useMemo(() => {
@@ -116,7 +124,12 @@ const PlatformMonitor: React.FC<Props> = ({ platformName, enableVideo }) => {
       // 调用启动接口
       await startLiveTask(rawId, platformName.toLowerCase());
       message.success("已发送启动信号，任务即将开始");
-      // 可以在这里手动刷新一下列表，或者等轮询
+      // 立即更新本地状态
+      setRankList(prev =>
+        prev.map(r =>
+          r.room_id === selectedRoomId ? { ...r, status: 'RUNNING' } : r
+        )
+      );
     } catch (e) {
       console.error(e);
       message.error("启动失败");
@@ -136,7 +149,12 @@ const PlatformMonitor: React.FC<Props> = ({ platformName, enableVideo }) => {
         platform: platformName.toLowerCase()
       });
       message.success("已发送停止信号，任务即将停止");
-      // 这里可以手动刷新一下状态，或者等待轮询自动更新
+      // 立即更新本地状态，不等待轮询
+      setRankList(prev =>
+        prev.map(r =>
+          r.room_id === selectedRoomId ? { ...r, status: 'STOPPED' } : r
+        )
+      );
     } catch (e) {
       console.error(e);
       message.error("停止失败");
@@ -228,6 +246,26 @@ const PlatformMonitor: React.FC<Props> = ({ platformName, enableVideo }) => {
       setFavLoading(false);
     }
   }
+
+  // 删除房间
+  const handleDeleteRoom = async () => {
+    const { roomId } = deleteModal;
+    if (!roomId) return;
+    try {
+      // 提取 raw_id（去掉前缀）用于 API
+      const rawId = roomId.includes(':') ? roomId.split(':').pop() || roomId : roomId;
+      await deleteRoom({ room_id: rawId, platform: platformName.toLowerCase() });
+      message.success('已删除');
+      setDeleteModal({ open: false, roomId: '', title: '' });
+      // 如果当前选中的是被删除的房间，跳转回列表
+      if (selectedRoomId === roomId) {
+        navigate(`/${platformName.toLowerCase()}`, { replace: true });
+      }
+    } catch (e) {
+      console.error(e);
+      message.error('删除失败');
+    }
+  };
 
 
   // 建议将清空逻辑独立出来，只监听 selectedRoomId
@@ -441,7 +479,35 @@ const PlatformMonitor: React.FC<Props> = ({ platformName, enableVideo }) => {
                           {item.anchor_name || '未知'}
                         </Text>
                       </Space>
-                      {isVideo ? <Tag color="gold">视频</Tag> : <Tag color="cyan">直播</Tag>}
+                      <Space>
+                        {isVideo ? <Tag color="gold">视频</Tag> : <Tag color="cyan">直播</Tag>}
+                        <Dropdown
+                          menu={{
+                            items: [
+                              {
+                                key: 'delete',
+                                icon: <DeleteOutlined />,
+                                label: '删除',
+                                danger: true,
+                              },
+                            ],
+                            onClick: ({ key }) => {
+                              if (key === 'delete') {
+                                setDeleteModal({ open: true, roomId: item.room_id, title: displayName });
+                              }
+                            },
+                          }}
+                          trigger={['click']}
+                        >
+                          <Button
+                            type="text"
+                            size="small"
+                            icon={<MoreOutlined />}
+                            onClick={(e) => e.stopPropagation()}
+                            style={{ color: '#666' }}
+                          />
+                        </Dropdown>
+                      </Space>
                     </div>
                     <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: '#666' }}>
                       <span>Status: {getStatusIcon(item.status)}</span>
@@ -567,6 +633,19 @@ const PlatformMonitor: React.FC<Props> = ({ platformName, enableVideo }) => {
           loading={loadingCloud && wordCloudData.length === 0}
           platformName={platformName.toLowerCase()}
         />
+
+        {/* 删除确认弹窗 */}
+        <Modal
+          title={<><ExclamationCircleOutlined style={{ color: '#faad14', marginRight: 8 }} />确认删除</>}
+          open={deleteModal.open}
+          okText="删除"
+          okButtonProps={{ danger: true }}
+          cancelText="取消"
+          onOk={handleDeleteRoom}
+          onCancel={() => setDeleteModal({ open: false, roomId: '', title: '' })}
+        >
+          <p>确定要删除监控任务 <strong>{deleteModal.title}</strong> 吗？<br />此操作会同时停止采集进程并清除所有相关数据。</p>
+        </Modal>
       </Content>
     </Layout>
   );

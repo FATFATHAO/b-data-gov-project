@@ -11,7 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from backend.database import init_etl_tables, init_auth_tables
 from backend.mock_data import init_database
-from backend.routers import catalog, quality, lineage, roi, tasks, auth
+from backend.routers import catalog, quality, lineage, roi, tasks, auth, monitor
 
 
 @asynccontextmanager
@@ -46,6 +46,7 @@ app.include_router(lineage.router)
 app.include_router(roi.router)
 app.include_router(tasks.router)
 app.include_router(auth.router)
+app.include_router(monitor.router)
 
 
 @app.get("/")
